@@ -1,0 +1,13 @@
+name = "NeuralQuantumStates"
+uuid = "0d106a18-caf6-4288-a3af-53d8e0520c36"
+authors = ["Kadir Çeven"]
+version = "0.1.0"
+
+[compat]
+julia = "1.9"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
