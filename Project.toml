@@ -1,7 +1,7 @@
 name = "NeuralQuantumStates"
 uuid = "0d106a18-caf6-4288-a3af-53d8e0520c36"
 authors = ["Kadir Çeven"]
-version = "0.1.0"
+version = "0.1.0-dev"
 
 [compat]
 julia = "1.9"
