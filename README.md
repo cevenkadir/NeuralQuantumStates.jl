@@ -13,7 +13,7 @@ NeuralQuantumStates.jl aims to provide a Julia package for training neural quant
 **This package is a <ins>work in progress</ins>.** Most of the functionality still needs to be implemented. The performance still needs to be optimized for both CPU and GPU. Its API is not yet stable.
 
 ## Installation
-If you still want to try it out, you can install it from the Julia REPL by pressing `]` to enter `pkg` mode and then entering:
+If you still want to try it out, you can install it from the Julia REPL by entering:
 ```julia
 julia> import Pkg; Pkg.add("https://github.com/cevenkadir/NeuralQuantumStates.jl")
 ```
