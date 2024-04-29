@@ -10,7 +10,7 @@
 NeuralQuantumStates.jl aims to provide a Julia package for training neural quantum states (NQS) using the variational Monte Carlo (VMC).
 
 ## Project status
-**This package is a <ins>work in progress</ins>.** Most of the functionality still needs to be implemented. The performance still needs to be optimized for both CPU and GPU. The API of this package is not yet stable.
+**This package is a <ins>work in progress</ins>.** Most of the functionality still needs to be implemented. The performance still needs to be optimized for both CPU and GPU. The API for this package might still be unstable.
 
 ## Installation
 If you still want to try it out, you can install it from the Julia REPL by entering:
@@ -19,10 +19,10 @@ julia> import Pkg; Pkg.add("https://github.com/cevenkadir/NeuralQuantumStates.jl
 ```
 
 ## Documentation
-For information on using this package, check out the [in-development documentation](https://kadirceven.com/NeuralQuantumStates.jl/dev/).
+For information on using this package, check out the [in-development documentation](https://cevenkadir.github.io/NeuralQuantumStates.jl/dev/).
 
 ## Development goals
-- [ ] `Lattices` module to generate any Bravais lattice.
+- [ x ] `Lattices` module to generate any Bravais lattice.
 - [ ] `Networks` module to generate canonical artificial neural networks (ANN) via [Flux.jl](https://github.com/FluxML/Flux.jl).
 - [ ] `VarStates` module to define variational quantum states.
 - [ ] `Hilberts` module to define Hilbert spaces.
