@@ -1,5 +1,5 @@
 using NeuralQuantumStates
-]using Documenter
+using Documenter
 
 DocMeta.setdocmeta!(NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true)
 
