@@ -1,18 +1,18 @@
 using NeuralQuantumStates
-using MarkdownVitepress
+using Documenter
+using DocumenterVitepress
 
 DocMeta.setdocmeta!(NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true)
 
 makedocs(;
     modules=[NeuralQuantumStates],
     authors="Kadir Çeven",
-    repo="https://github.com/cevenkadir/NeuralQuantumStates.jl/blob/{commit}{path}#{line}",
+    repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
     sitename="NeuralQuantumStates.jl",
-    format=MarkdownVitepress(;
-        prettyurls=get(ENV, "CI", "false") == "true",
-        canonical="https://cevenkadir.github.io/NeuralQuantumStates.jl",
-        edit_link="main",
-        assets=String[]
+    format=DocumenterVitepress.MarkdownVitepress(
+        repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
+        devurl="dev",
+        deploy_url="cevenkadir.github.io/NeuralQuantumStates.jl",
     ),
     pages=[
         "Home" => "index.md",
@@ -27,5 +27,8 @@ makedocs(;
 
 deploydocs(;
     repo="github.com/cevenkadir/NeuralQuantumStates.jl",
-    devbranch="main"
+    target="build", # this is where Vitepress stores its output
+    devbranch="main",
+    branch="gh-pages",
+    push_preview=true
 )
