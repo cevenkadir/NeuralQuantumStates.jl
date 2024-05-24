@@ -1,5 +1,5 @@
 using NeuralQuantumStates
-using Documenter
+using MarkdownVitepress
 
 DocMeta.setdocmeta!(NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true)
 
@@ -8,7 +8,7 @@ makedocs(;
     authors="Kadir Çeven",
     repo="https://github.com/cevenkadir/NeuralQuantumStates.jl/blob/{commit}{path}#{line}",
     sitename="NeuralQuantumStates.jl",
-    format=Documenter.HTML(;
+    format=MarkdownVitepress(;
         prettyurls=get(ENV, "CI", "false") == "true",
         canonical="https://cevenkadir.github.io/NeuralQuantumStates.jl",
         edit_link="main",
