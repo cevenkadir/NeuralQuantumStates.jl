@@ -10,7 +10,7 @@ makedocs(;
     format=DocumenterVitepress.MarkdownVitepress(
         repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
         devurl="dev",
-        deploy_url="cevenkadir.github.io/NeuralQuantumStates.jl",
+        deploy_url="/NeuralQuantumStates.jl",
     ),
     pages=[
         "Home" => "index.md",
