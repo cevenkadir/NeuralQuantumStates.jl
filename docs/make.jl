@@ -1,34 +1,24 @@
-using NeuralQuantumStates
-using Documenter
-using DocumenterVitepress
+using Documenter, DocumenterVitepress
 
-DocMeta.setdocmeta!(NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true)
+using NeuralQuantumStates
 
 makedocs(;
     modules=[NeuralQuantumStates],
-    repo=Remotes.GitHub("cevenkadir", "NeuralQuantumStates.jl"),
     authors="Kadir Çeven",
-    sitename="NeuralQuantumStates.jl",
+    repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
+    sitename="Chairmarks.jl",
     format=DocumenterVitepress.MarkdownVitepress(
         repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
         devurl="dev",
-        deploy_url="https://cevenkadir.github.io/NeuralQuantumStates.jl",
+        deploy_url="cevenkadir.github.io/NeuralQuantumStates.jl",
     ),
     pages=[
         "Home" => "index.md",
-        "Manual" => Any[
-            "Lattices"=>"manual/lattices.md",
-        ],
-        "Reference" => Any[
-            "Public API"=>"lib/public.md",
-        ],
-    ]
+    ],
+    warnonly=true,
 )
 
 deploydocs(;
     repo="github.com/cevenkadir/NeuralQuantumStates.jl",
-    target="build", # this is where Vitepress stores its output
-    devbranch="main",
-    branch="gh-pages",
-    push_preview=true
+    push_preview=true,
 )
