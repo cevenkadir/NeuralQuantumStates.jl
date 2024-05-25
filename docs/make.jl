@@ -13,6 +13,7 @@ makedocs(;
     ),
     pages=[
         "Home" => "index.md",
+        "Basics" => "basics.md",
         "Manual" => Any[
             "Lattices"=>"manual/lattices.md",
         ],
