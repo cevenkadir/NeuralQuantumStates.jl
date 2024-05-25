@@ -1,9 +1,7 @@
-```@meta
-CurrentModule = NeuralQuantumStates
+# NeuralQuantumStates.jl
+
+Documentation for `NeuralQuantumStates.jl`.
+
+```@autodocs
+Modules=[NeuralQuantumStates]
 ```
-
-# NeuralQuantumStates
-
-Documentation for [NeuralQuantumStates](https://github.com/cevenkadir/NeuralQuantumStates.jl).
-
-
