@@ -16,5 +16,8 @@ hero:
     - theme: alt
       text: View on GitHub
       link: https://github.com/cevenkadir/NeuralQuantumStates.jl
+  image:
+    src: /logo.png
+    alt: NeuralQuantumStates.jl
 ---
 ```
