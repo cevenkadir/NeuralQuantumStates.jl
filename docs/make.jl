@@ -21,10 +21,11 @@ makedocs(;
             "Public API"=>"lib/public.md",
         ],
     ],
-    warnonly=true,
 )
 
 deploydocs(;
     repo="github.com/cevenkadir/NeuralQuantumStates.jl",
+    target="build", # this is where Vitepress stores its output
+    branch="gh-pages",
     push_preview=true,
 )
