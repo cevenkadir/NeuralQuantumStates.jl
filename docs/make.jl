@@ -5,12 +5,11 @@ using NeuralQuantumStates
 makedocs(;
     modules=[NeuralQuantumStates],
     authors="Kadir Çeven",
-    repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
-    sitename="Chairmarks.jl",
+    repo="github.com/cevenkadir/NeuralQuantumStates.jl",
+    sitename="NeuralQuantumStates.jl",
     format=DocumenterVitepress.MarkdownVitepress(
-        repo="https://github.com/cevenkadir/NeuralQuantumStates.jl",
-        devurl="dev",
-        deploy_url="/NeuralQuantumStates.jl",
+        repo="github.com/cevenkadir/NeuralQuantumStates.jl",
+        devurl="dev"
     ),
     pages=[
         "Home" => "index.md",
