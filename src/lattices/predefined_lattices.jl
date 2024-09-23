@@ -39,7 +39,7 @@ build(lattice_sym::Symbol, args...; kwargs...) = build(Val(lattice_sym), args...
         edge_lengths::AbstractVector{T},
         angles::AbstractVector{T};
         periodic::Union{Bool,AbstractVector{Bool}}=false,
-    ) where {Tᵢ<:Integer,T<:Real} -> Lattice{Tᵢ,T,3,1}
+    ) where {Tᵢ<:Integer,T<:Real} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,3,1}
 
 Build a triclinic lattice from the given parameters.
 
@@ -60,7 +60,8 @@ Build a triclinic lattice from the given parameters.
     Defaults to `false`.
 
 # Returns
-- `Lattice{Tᵢ,T,3,1}`: The built triclinic lattice from the given parameters.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,3,1}`: The built triclinic lattice from the
+    given parameters.
 """
 function build(
     ::Val{:Triclinic},
@@ -119,7 +120,8 @@ end
         shape::AbstractVector{Tᵢ},
         edge_length::T;
         periodic::Union{Bool,AbstractVector{Bool}}=false,
-    ) where {Tᵢ<:Integer,T<:Real} -> Lattice{Tᵢ,T,length(shape),1}
+    ) where {Tᵢ<:Integer,T<:Real}
+        -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,length(shape),1}
 
 Build a hypercubic lattice from the given parameters.
 
@@ -135,7 +137,8 @@ Build a hypercubic lattice from the given parameters.
     booleans. Defaults to `false`.
 
 # Returns
-- `Lattice{Tᵢ,T,length(shape),1}`: The built hypercubic lattice from the given parameters.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,length(shape),1}`: The built hypercubic lattice
+    from the given parameters.
 """
 function build(
     ::Val{:Hypercube},
@@ -185,7 +188,7 @@ end
         periodic::Union{Bool,AbstractVector{Bool}}=false,
         tol_digits::Tᵢ=TOL_DIGITS,
         dist_tol::T=DIST_TOL
-    ) where {Tᵢ<:Integer,T<:Real} -> Lattice{Tᵢ,T,2,1}
+    ) where {Tᵢ<:Integer,T<:Real} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,1}
 
 Build a 2D triangular lattice from the given parameters.
 
@@ -206,7 +209,8 @@ Build a 2D triangular lattice from the given parameters.
     sites to be considered as the same site. Defaults to `1.0e-12`.
 
 # Returns
-- `Lattice{Tᵢ,T,2,1}`: The built 2D triangular lattice from the given parameters.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,1}`: The built 2D triangular lattice from the
+    given parameters.
 """
 function build(
     ::Val{:Triangular},
@@ -240,7 +244,7 @@ end
         periodic::Union{Bool,AbstractVector{Bool}}=false,
         tol_digits::Tᵢ=TOL_DIGITS,
         dist_tol::T=DIST_TOL
-    ) where {Tᵢ<:Integer,T<:Real} -> Lattice{Tᵢ,T,2,1}
+    ) where {Tᵢ<:Integer,T<:Real} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,1}
 
 Build a 2D honeycomb lattice from the given parameters.
 
@@ -260,7 +264,8 @@ Build a 2D honeycomb lattice from the given parameters.
     sites to be considered as the same site. Defaults to `1.0e-12`.
 
 # Returns
-- `Lattice{Tᵢ,T,2,2}`: The built 2D honeycomb lattice from the given parameters.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,2}`: The built 2D honeycomb lattice from the
+    given parameters.
 """
 function build(
     ::Val{:Honeycomb},
@@ -295,7 +300,7 @@ end
         periodic::Union{Bool,AbstractVector{Bool}}=false,
         tol_digits::Tᵢ=TOL_DIGITS,
         dist_tol::T=DIST_TOL
-    ) where {Tᵢ<:Integer,T<:Real} -> Lattice{Tᵢ,T,2,3}
+    ) where {Tᵢ<:Integer,T<:Real} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,3}
 
 Build a 2D kagome lattice from the given parameters.
 
@@ -315,7 +320,8 @@ Build a 2D kagome lattice from the given parameters.
     sites to be considered as the same site. Defaults to `1.0e-12`.
 
 # Returns
-- `Lattice{Tᵢ,T,2,3}`: The built 2D kagome lattice from the given parameters.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,2,3}`: The built 2D kagome lattice from the
+    given parameters.
 """
 function build(
     ::Val{:Kagome},
