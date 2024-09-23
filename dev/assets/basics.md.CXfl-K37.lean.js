@@ -1,1 +1,0 @@
-import{_ as a,c as s,o as t,a6 as i}from"./chunks/framework.QqGPpskM.js";const u=JSON.parse('{"title":"","description":"","frontmatter":{},"headers":[],"relativePath":"basics.md","filePath":"basics.md","lastUpdated":null}'),e={name:"basics.md"},n=i("",3),l=[n];function h(o,p,r,d,c,k){return t(),s("div",null,l)}const g=a(e,[["render",h]]);export{u as __pageData,g as default};
