@@ -41,7 +41,7 @@ If you think you have found a bug or have a feature request, you can open an [is
 
 ## Citation
 If you use this package in your work, 
-we would appreciate the following reference as in [CITATION.bib](https://github.com/cevenkadir/NeuralQuantumStates.jl/main/CITATION.bib).
+we would appreciate the following reference as in [CITATION.bib](https://github.com/cevenkadir/NeuralQuantumStates.jl/blob/main/CITATION.bib).
 
 ## Acknowledgements
 This package is mainly inspired by the Python libraries of [NetKet](https://github.com/netket/netket) and [jVMC](https://github.com/markusschmitt/vmc_jax).
