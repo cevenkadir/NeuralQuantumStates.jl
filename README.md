@@ -29,7 +29,7 @@ For information on using this package, check out the [in-development documentati
 - [x] `Lattices` module to generate any Bravais lattice.
 - [ ] `Networks` module to generate canonical artificial neural networks (ANN) via [Flux.jl](https://github.com/FluxML/Flux.jl).
 - [ ] `VarStates` module to define variational quantum states.
-- [ ] `Hilberts` module to define Hilbert spaces.
+- [x] `Hilberts` module to define Hilbert spaces. (*work in progress*)
 - [ ] `Operators` module to define arbitrary quantum operators on a computational basis.
 - [ ] `Samplers` module to sample variational quantum states with Markov chain Monte-Carlo (MCMC) methods.
 - [ ] `Handlers` module to optimize variational quantum states with gradient-based methods.
