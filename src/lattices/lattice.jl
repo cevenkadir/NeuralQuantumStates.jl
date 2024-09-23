@@ -17,26 +17,29 @@ abstract type AbstractLatticeBasis{T<:Real,D,O} end
 abstract type AbstractLattice{Tᵢ<:Integer,T<:Real,D,O} end
 
 """
-    LatticeBasis{T<:Real,D,O} <: AbstractLatticeBasis{T,D,O}
+    LatticeBasis{T<:Real,D,O} <: NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}
+
 A lattice basis for representing the unit cell of a `D`-dimensional lattice with `O` site
     offsets.
 
 # Fields
-- `vectors::SMatrix{D,D,T}`: A `D```\\times```D` square matrix for the primitive
-    vectors defining the unit cell.
+- `vectors::SMatrix{D,D,T}`: A `D```\\times```D` square matrix for the primitive vectors
+    defining the unit cell.
 - `site_offsets::SMatrix{D,O,T}`: A `D```\\times```O` matrix for the site offsets of the
     lattice basis in the unit cell.
 """
 @with_kw struct LatticeBasis{T<:Real,D,O} <: AbstractLatticeBasis{T,D,O}
     vectors::SMatrix{D,D,T}
     site_offsets::SMatrix{D,O,T}
+    @assert D isa Integer "dimension must be an integer"
+    @assert O isa Integer "number of site offsets must be an integer"
     @assert D > 0 "dimension must be positive"
     @assert O > 0 "number of site offsets must be positive"
 end
 """
     LatticeBasis(
         vector::T, site_offsets::AbstractVector{T}
-    ) where {T<:Real} -> LatticeBasis{T,1,length(site_offsets)}
+    ) where {T<:Real} -> NeuralQuantumStates.Lattices.LatticeBasis{T,1,length(site_offsets)}
 
 Define a lattice basis for representing the unit cell of a 1D lattice with
     `length(site_offsets)` site offsets.
@@ -47,8 +50,8 @@ Define a lattice basis for representing the unit cell of a 1D lattice with
     the unit cell.
 
 # Returns
-- `LatticeBasis{T,1,length(site_offsets)}`: The defined lattice basis of a 1D lattice with
-    `length(site_offsets)` site offsets.
+- `NeuralQuantumStates.Lattices.LatticeBasis{T,1,length(site_offsets)}`: The defined lattice
+    basis of a 1D lattice with `length(site_offsets)` site offsets.
 """
 function LatticeBasis(vector::T, site_offsets::AbstractVector{T}) where {T<:Real}
     site_offsets = unique(collect(site_offsets))
@@ -61,7 +64,8 @@ function LatticeBasis(vector::T, site_offsets::AbstractVector{T}) where {T<:Real
     return LatticeBasis{T,1,n_offsets}(vector, site_offsets)
 end
 """
-    LatticeBasis(vector::T, site_offset::T=T(0.0)) where {T<:Real} -> LatticeBasis{T,1,1}
+    LatticeBasis(vector::T, site_offset::T=T(0.0)) where {T<:Real}
+        -> NeuralQuantumStates.Lattices.LatticeBasis{T,1,1}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a 1D
     lattice with the given primitive `vector` and `site_offset`.
@@ -72,8 +76,8 @@ Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit c
     Defaults to `T(0.0)`.
 
 # Returns
-- `LatticeBasis{T,1,1}`: The defined lattice basis of a 1D lattice with the given primitive
-    `vector` and `site_offset`.
+- `NeuralQuantumStates.Lattices.LatticeBasis{T,1,1}`: The defined lattice basis of a 1D
+    lattice with the given primitive `vector` and `site_offset`.
 """
 function LatticeBasis(vector::T, site_offset::T) where {T<:Real}
     return LatticeBasis(vector, [site_offset])
@@ -83,20 +87,20 @@ LatticeBasis(vector::T) where {T<:Real} = LatticeBasis(vector, T(0.0))
     LatticeBasis(
         vectors::AbstractMatrix{T},
         site_offset::AbstractVector{T}=zeros(T, size(vectors)[1])
-    ) where {T<:Real} -> LatticeBasis{T,size(vectors)[1],1}
+    ) where {T<:Real} -> NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],1}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
     `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
     `site_offset`.
 
 # Arguments
-- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the
-    unit cell. Each column of the matrix is a primitive vector.
+- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the unit
+    cell. Each column of the matrix is a primitive vector.
 - `site_offset::AbstractVector{T}`: A vector for one site offset of the lattice basis in the
     unit cell. Defaults to `zeros(T, size(vectors)[1])`.
 
 # Returns
-- `LatticeBasis{T,size(vectors)[1],1}`: The defined
+- `NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],1}`: The defined
     `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
     `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
     `site_offset`.
@@ -116,22 +120,23 @@ end
     LatticeBasis(
         vectors::AbstractMatrix{T},
         site_offsets::AbstractMatrix{T}=zeros(T, size(vectors)[1], 1)
-    ) where {T<:Real} -> LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}
+    ) where {T<:Real}
+        -> NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
     `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 
 # Arguments
-- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the
-    unit cell. Each column of the matrix is a primitive vector.
+- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the unit
+    cell. Each column of the matrix is a primitive vector.
 - `site_offsets::AbstractMatrix{T}`: A matrix for the site offsets of the lattice basis in
     the unit cell. Each column of the matrix is a site offset vector. Defaults to
     `zeros(T, size(vectors)[1], 1)`.
 
 # Returns
-- `LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}`: The defined
-    `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
+- `NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}`: The
+    defined `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
     `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 """
@@ -154,24 +159,25 @@ end
     LatticeBasis(
         vectors::AbstractVector{<:AbstractVector{T}},
         site_offsets::AbstractVector{<:AbstractVector{T}}=[zeros(T, length(vectors[1]))]
-    ) where {T<:Real} -> LatticeBasis{T,length(vectors[1]),length(site_offsets)}
+    ) where {T<:Real}
+        -> NeuralQuantumStates.Lattices.LatticeBasis{T,length(vectors[1]),length(site_offsets)}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
     `length(vectors[1])`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 
 # Arguments
-- `vectors::AbstractVector{<:AbstractVector{T}}`: A vector of primitive vectors
-    defining the unit cell. Each element of the vector should be a primitive vector
-    with the same dimension.
+- `vectors::AbstractVector{<:AbstractVector{T}}`: A vector of primitive vectors defining the
+    unit cell. Each element of the vector should be a primitive vector with the same
+    dimension.
 - `site_offsets::AbstractVector{<:AbstractVector{T}}`: A vector of site offsets of the
     lattice basis in the unit cell. Each element of the vector should be a site offset
     vector with the same dimension. Defaults to `[zeros(T, length(vectors[1]))]`.
 
 # Returns
-- `LatticeBasis{T,length(vectors[1]),length(site_offsets)}`: The defined
-    `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
-    `length(vectors[1])`-dimensional lattice with the given primitive `vectors` and
+- `NeuralQuantumStates.Lattices.LatticeBasis{T,length(vectors[1]),length(site_offsets)}`:
+    The defined `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell
+    of a `length(vectors[1])`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 """
 function LatticeBasis(
@@ -248,6 +254,8 @@ end
     shape::SVector{D,Tᵢ}
     basis::AbstractLatticeBasis{T,D,O}
     periodic::SVector{D,Bool}
+    @assert D isa Integer "dimension must be an integer"
+    @assert O isa Integer "number of site offsets must be an integer"
     @assert D > 0 "dimension must be positive"
     @assert O > 0 "number of site offsets must be positive"
     @assert all(shape .> 0) "shape must contain positive integers"
@@ -386,7 +394,8 @@ function _edges(
 end
 
 """
-    Lattice{Tᵢ<:Integer,T<:Real,D,O} <: AbstractLattice{Tᵢ,T,D,O}
+    Lattice{Tᵢ<:Integer,T<:Real,D,O}
+        <: NeuralQuantumStates.Lattices.AbstractLattice{Tᵢ,T,D,O}
 
 A `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` with given lattice
     `basis` and `periodic` boundary conditions.
@@ -396,8 +405,8 @@ A `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` with given l
     vertices and edges.
 - `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
     positive integers.
-- `basis::AbstractLatticeBasis{T,D,O}`: A lattice basis for representing the unit cell of
-    the lattice.
+- `basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}`: A lattice basis for
+    representing the unit cell of the lattice.
 - `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
     in each dimension.
 """
@@ -407,18 +416,20 @@ A `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` with given l
     basis::AbstractLatticeBasis{T,D,O}
     periodic::SVector{D,Bool}
     @assert all(shape .> 0) "shape must contain positive integers"
+    @assert D isa Integer "dimension must be an integer"
+    @assert O isa Integer "number of site offsets must be an integer"
     @assert D > 0 "dimension must be positive"
     @assert O > 0 "number of site offsets must be positive"
 end
 """
     Lattice(
         shape::SVector{D,Tᵢ},
-        basis::AbstractLatticeBasis{T,D,O},
+        basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O},
         periodic::SVector{D,Bool}=SVector{D,Bool}(fill(false, D));
         max_order::Tᵢ=1,
         tol_digits::Tᵢ=12,
         dist_tol::T=1.0e-12
-    ) where {Tᵢ<:Integer,T<:Real,D,O} -> Lattice{Tᵢ,T,D,O}
+    ) where {Tᵢ<:Integer,T<:Real,D,O} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}
 
 Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given
     lattice `basis` and `periodic` boundary conditions.
@@ -426,10 +437,10 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
 # Arguments
 - `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
     positive integers.
-- `basis::AbstractLatticeBasis{T,D,O}`: A lattice basis for representing the unit cell of
-    the lattice.
-- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the
-    lattice in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
+- `basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}`: A lattice basis for
+    representing the unit cell of the lattice.
+- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
+    in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
 
 # Keywords
 - `max_order::Tᵢ`: An integer for the maximum order of the edges to be included in the
@@ -442,8 +453,9 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
     sites to be considered as the same site. Defaults to `1.0e-12`.
 
 # Returns
-- `Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of
-    `shape` by using the given lattice `basis` and `periodic` boundary conditions.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
+    `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given lattice `basis` and
+    `periodic` boundary conditions.
 """
 function Lattice(
     shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,O}, periodic::SVector{D,Bool};
@@ -494,12 +506,12 @@ end
 """
     Lattice(
         shape::AbstractVector{Tᵢ},
-        basis::AbstractLatticeBasis{T,D,O},
+        basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O},
         periodic::AbstractVector{Bool}=fill(false, D);
         max_order::Tᵢ=1,
         tol_digits::Tᵢ=12,
         dist_tol::T=1.0e-12
-    ) where {Tᵢ<:Integer,T<:Real,D,O} -> Lattice{Tᵢ,T,D,O}
+    ) where {Tᵢ<:Integer,T<:Real,D,O} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}
 
 Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given
     lattice `basis` and `periodic` boundary conditions.
@@ -507,8 +519,8 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
 # Arguments
 - `shape::AbstractVector{Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
     positive integers.
-- `basis::AbstractLatticeBasis{T,D,O}`: A lattice basis for representing the unit cell of
-    the lattice.
+- `basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}`: A lattice basis for
+    representing the unit cell of the lattice.
 - `periodic::AbstractVector{Bool}`: A vector for the periodic boundary condition of the
     lattice in each dimension. Defaults to `fill(false, D)`.
 
@@ -523,8 +535,9 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
     sites to be considered as the same site. Defaults to `1.0e-12`.
 
 # Returns
-- `Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of
-    `shape` by using the given lattice `basis` and `periodic` boundary conditions.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
+    `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given lattice `basis` and
+    `periodic` boundary conditions.
 """
 function Lattice(
     shape::AbstractVector{Tᵢ},
@@ -551,10 +564,10 @@ end
 """
     Lattice(
         shape::SVector{D,Tᵢ},
-        basis::AbstractLatticeBasis{T,D,O},
+        basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O},
         custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
         periodic::SVector{D,Bool}=SVector{D,Bool}(fill(false, D))
-    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> Lattice{Tᵢ,T,D,O}
+    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}
 
 Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given
     lattice `basis`, `periodic` boundary conditions and `custom_edges`.
@@ -562,20 +575,20 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
 # Arguments
 - `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
     positive integers.
-- `basis::AbstractLatticeBasis{T,D,O}`: A lattice basis for representing the unit cell of
-    the lattice.
+- `basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}`: A lattice basis for
+    representing the unit cell of the lattice.
 - `custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}`: A tuple of two
     vectors for the custom edges to be added to the lattice. The first vector contains the
     lattice site labels of the edges to be added in the form of `NTuple{2,L}` where `L` is
     the type of the lattice site labels. The second vector is of positive integers for
     distingushing the edges to be added. These two vectors must have the same length.
-- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the
-    lattice in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
+- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
+    in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
 
 # Returns
-- `Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of
-    `shape` by using the given lattice `basis`, `periodic` boundary conditions and
-    `custom_edges`.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
+    `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given lattice `basis`,
+    `periodic` boundary conditions and `custom_edges`.
 """
 function Lattice(
     shape::SVector{D,Tᵢ},
@@ -614,10 +627,10 @@ end
 """
     Lattice(
         shape::AbstractVector{Tᵢ},
-        basis::AbstractLatticeBasis{T,D,O},
+        basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O},
         custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
         periodic::SVector{Bool}=fill(false, D)
-    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> Lattice{Tᵢ,T,D,O}
+    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}
 
 Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given
     lattice `basis`, `periodic` boundary conditions and `custom_edges`.
@@ -625,8 +638,8 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
 # Arguments
 - `shape::AbstractVector{Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
     positive integers.
-- `basis::AbstractLatticeBasis{T,D,O}`: A lattice basis for representing the unit cell of
-    the lattice.
+- `basis::NeuralQuantumStates.Lattices.AbstractLatticeBasis{T,D,O}`: A lattice basis for
+    representing the unit cell of the lattice.
 - `custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}`: A tuple of two
     vectors for the custom edges to be added to the lattice. The first vector contains the
     lattice site labels of the edges to be added in the form of `NTuple{2,L}` where `L` is
@@ -636,9 +649,9 @@ Build a `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of `shape` by usi
     lattice in each dimension. Defaults to `fill(false, D)`.
 
 # Returns
-- `Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional `NeuralQuantumStates.Lattices.Lattice` of
-    `shape` by using the given lattice `basis`, `periodic` boundary conditions and
-    `custom_edges`.
+- `NeuralQuantumStates.Lattices.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
+    `NeuralQuantumStates.Lattices.Lattice` of `shape` by using the given lattice `basis`,
+    `periodic` boundary conditions and `custom_edges`.
 """
 function Lattice(
     shape::AbstractVector{Tᵢ},
