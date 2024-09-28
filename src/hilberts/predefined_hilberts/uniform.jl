@@ -1,15 +1,14 @@
 using NeuralQuantumStates.Hilberts
 
-# Uniform Hilbert space
-## Fock
-## Spin
-## Qubit
-
-build(hilbert_type::Symbol, args...; kwargs...) = build(Val(hilbert_type), args...; kwargs...)
+function build(hilbert_type::Symbol, args...; kwargs...)
+    return build(Val(hilbert_type), args...; kwargs...)
+end
 
 """
-    build(::Val{:Spin}, s::T, N::Integer; ∑Sz::Union{T_Sz,Nothing}=nothing) where
-        {T<:Union{Rational,Integer},T_Sz<:Real}
+    build(
+        ::Val{:Spin}, s::T, N::Integer;
+        ∑Sz::Union{T_Sz,Nothing}=nothing
+    ) where {T<:Union{Rational,Integer},T_Sz<:Real}
         -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
 
 Build a finite uniform Hilbert space for a spin-`s` system.
@@ -47,9 +46,10 @@ function build(
 end
 
 """
-    build(::Val{:Fock}, n_max::T, N::Integer; ∑n::Union{T_n,Nothing}=nothing) where
-        {T<:Integer,T_n<:Real}
-        -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
+    build(
+        ::Val{:Fock}, n_max::T, N::Integer;
+        ∑n::Union{T_n,Nothing}=nothing
+    ) where {T<:Integer,T_n<:Real} -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
 
 Build a finite uniform Hilbert space for a Fock system.
 
@@ -114,12 +114,16 @@ function build(::Val{:Qubit}, N::Integer) where {T<:Integer}
     )
 end
 
+"""
+    all_states(
+        hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}
+    ) where {T<:Real,N_DoF,N_lDoF} -> Vector{NTuple{N_DoF,T}}
 
 Return all states in the given finite uniform Hilbert space.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}`: The finite uniform Hilbert
-    space.
+- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}`: The finite
+    uniform Hilbert space.
 
 # Returns
 - `Vector{NTuple{N_DoF,T}}`: All states in the given finite uniform Hilbert space.
@@ -128,7 +132,10 @@ function all_states(
     hilbert::Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}
 ) where {T<:Real,N_DoF,N_lDoF}
     i = Iterators.product([hilbert.lDoF for _ in 1:N_DoF]...)
-    return Iterators.filter(x -> Hilberts.check(hilbert.constraint, x), i) |> collect |> unique
+    return Iterators.filter(
+               x -> Hilberts.check(hilbert.constraint, x),
+               i
+           ) |> collect |> unique
 end
 
 """
@@ -138,7 +145,8 @@ end
 Throws an `OverflowError` since the Hilbert space is infinite.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF}`: The infinite uniform Hilbert space.
+- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF}`: The infinite
+    uniform Hilbert space.
 """
 function all_states(hilbert::Hilberts.InfiniteUniformHilbert{T,N_DoF}) where {T<:Real,N_DoF}
     throw(OverflowError("Infinite Hilbert space"))
@@ -158,8 +166,13 @@ Return all states in the given composite uniform Hilbert space.
 - `Vector{NTuple}`: All states in the given composite uniform Hilbert space.
 """
 function all_states(composite_hilbert::CompositeUniformHilbert{N,N_DoF}) where {N,N_DoF}
-    i = Iterators.product([all_states(hilbert) for hilbert in composite_hilbert.hilberts]...)
-    return Iterators.filter(x -> Hilberts.check(composite_hilbert.composite_constraint, x), i) |> collect |> unique
+    i = Iterators.product(
+        [all_states(hilbert) for hilbert in composite_hilbert.hilberts]...
+    )
+    return Iterators.filter(
+               x -> Hilberts.check(composite_hilbert.composite_constraint, x),
+               i
+           ) |> collect |> unique
 end
 
 """
@@ -182,10 +195,15 @@ Return a composite uniform Hilbert space by taking the tensor product of the giv
 - `NeuralQuantumStates.Hilberts.CompositeUniformHilbert`: The generated composite uniform
     Hilbert space.
 """
-function ⊗((hilberts::Hilberts.UniformHilbert)...; composite_constraint::Hilberts.AbstractCompositeDiscreteHilbertConstraint=Hilberts.NoCompositeDiscreteHilbertConstraint())
+function ⊗(
+    (hilberts::Hilberts.UniformHilbert)...;
+    composite_constraint::Hilberts.AbstractCompositeDiscreteHilbertConstraint=Hilberts.NoCompositeDiscreteHilbertConstraint()
+)
     total_N_DoF = sum(Hilberts.n_DoF.(hilberts))
 
-    return Hilberts.CompositeUniformHilbert{length(hilberts),total_N_DoF}(hilberts=hilberts, composite_constraint=composite_constraint)
+    return Hilberts.CompositeUniformHilbert{length(hilberts),total_N_DoF}(
+        hilberts=hilberts, composite_constraint=composite_constraint
+    )
 end
 
 """
@@ -205,7 +223,9 @@ Return the states corresponding to the given indices in the given uniform Hilber
 - `Vector{NTuple}`: A vector of states corresponding to the given indices in the state
     representation.
 """
-function state_index_to_state(hilbert::Hilberts.UniformHilbert{N_DoF}, indices::AbstractVector{Int}) where {N_DoF}
+function state_index_to_state(
+    hilbert::Hilberts.UniformHilbert{N_DoF}, indices::AbstractVector{Int}
+) where {N_DoF}
     return all_states(hilbert)[indices]
 end
 
@@ -224,7 +244,9 @@ Return the state corresponding to the given index in the given uniform Hilbert s
 # Returns
 - `NTuple`: A state corresponding to the given index in the state representation.
 """
-function state_index_to_state(hilbert::Hilberts.UniformHilbert{N_DoF}, index::Int) where {N_DoF}
+function state_index_to_state(
+    hilbert::Hilberts.UniformHilbert{N_DoF}, index::Int
+) where {N_DoF}
     return all_states(hilbert)[index]
 end
 
@@ -244,7 +266,9 @@ Return the indices of the given states in the given uniform Hilbert space.
 # Returns
 - `Vector{Integer}`: A vector of indices of the given states in the index representation.
 """
-function state_to_state_index(hilbert::Hilberts.UniformHilbert{N_DoF}, states::AbstractVector{NTuple{N_DoF,T}}) where {N_DoF,T<:Real}
+function state_to_state_index(
+    hilbert::Hilberts.UniformHilbert{N_DoF}, states::AbstractVector{NTuple{N_DoF,T}}
+) where {N_DoF,T<:Real}
     allstates = all_states(hilbert)
     return [findfirst(x -> x == state, allstates) for state in states]
 end
@@ -264,7 +288,9 @@ Return the index of the given state in the given uniform Hilbert space.
 # Returns
 - `Integer`: The index of the given state in the index representation.
 """
-function state_to_state_index(hilbert::Hilberts.UniformHilbert{N_DoF}, state::NTuple{N_DoF,T}) where {N_DoF,T<:Real}
+function state_to_state_index(
+    hilbert::Hilberts.UniformHilbert{N_DoF}, state::NTuple{N_DoF,T}
+) where {N_DoF,T<:Real}
     return state_to_state_index(hilbert, [state]).first
 end
 
