@@ -33,9 +33,9 @@ function build(
 
 
     if ∑Sz === nothing
-        constraint = nothing
+        constraint = NoHilbertConstraint()
     else
-        constraint = SumConstraint{typeof(∑Sz)}(∑Sz)
+        constraint = SumConstraint{T_Sz}(∑Sz)
     end
 
     return FiniteUniformHilbert{T,N,n_lDoF}(
@@ -76,7 +76,7 @@ function build(
     if ∑n === nothing
         constraint = NoHilbertConstraint()
     else
-        constraint = SumConstraint{typeof(∑n)}(∑n)
+        constraint = SumConstraint{T_n}(∑n)
     end
 
     return FiniteUniformHilbert{T,N,n_lDoF}(
@@ -99,15 +99,15 @@ Build a finite uniform Hilbert space for a qubit system.
 - `NeuralQuantumStates.Hilberts.FiniteUniformHilbert`: The finite uniform Hilbert space for
     a qubit system.
 """
-function build(::Val{:Qubit}, N::Integer) where {T<:Integer}
+function build(::Val{:Qubit}, N::Integer)
     lDoF = range(0, 1; step=1)
     lDoF = SVector{length(lDoF)}(lDoF)
 
     n_lDoF = 2
 
-    constraint = nothing
+    constraint = NoHilbertConstraint()
 
-    return FiniteUniformHilbert{T,N,n_lDoF}(
+    return FiniteUniformHilbert{eltype(lDoF),N,n_lDoF}(
         lDoF=lDoF,
         constraint=constraint,
         type=:Qubit
