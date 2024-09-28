@@ -33,7 +33,7 @@ function build(
 
 
     if ∑Sz === nothing
-        constraint = NoHilbertConstraint()
+        constraint = NoDiscreteHilbertConstraint()
     else
         constraint = SumConstraint{T_Sz}(∑Sz)
     end
@@ -74,7 +74,7 @@ function build(
     lDoF = SVector{n_lDoF}(lDoF)
 
     if ∑n === nothing
-        constraint = NoHilbertConstraint()
+        constraint = NoDiscreteHilbertConstraint()
     else
         constraint = SumConstraint{T_n}(∑n)
     end
@@ -105,7 +105,7 @@ function build(::Val{:Qubit}, N::Integer)
 
     n_lDoF = 2
 
-    constraint = NoHilbertConstraint()
+    constraint = NoDiscreteHilbertConstraint()
 
     return FiniteUniformHilbert{eltype(lDoF),N,n_lDoF}(
         lDoF=lDoF,
