@@ -87,8 +87,33 @@ function build(
 end
 
 """
-    all_states(hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}) where
-        {T<:Real,N_DoF,N_lDoF} -> Vector{NTuple{N_DoF,T}}
+    build(::Val{:Qubit}, N::Integer) where {T<:Integer}
+        -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
+
+Build a finite uniform Hilbert space for a qubit system.
+
+# Arguments
+- `N::Integer`: Number of degrees of freedom.
+
+# Returns
+- `NeuralQuantumStates.Hilberts.FiniteUniformHilbert`: The finite uniform Hilbert space for
+    a qubit system.
+"""
+function build(::Val{:Qubit}, N::Integer) where {T<:Integer}
+    lDoF = range(0, 1; step=1)
+    lDoF = SVector{length(lDoF)}(lDoF)
+
+    n_lDoF = 2
+
+    constraint = nothing
+
+    return FiniteUniformHilbert{T,N,n_lDoF}(
+        lDoF=lDoF,
+        constraint=constraint,
+        type=:Qubit
+    )
+end
+
 
 Return all states in the given finite uniform Hilbert space.
 
