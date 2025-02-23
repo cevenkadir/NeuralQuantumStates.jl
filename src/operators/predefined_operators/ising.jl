@@ -215,7 +215,7 @@ function connected_basis_configs(
     configs = vcat(configs₀, configs₁)
     vals = vcat(vals₀, vals₁)
 
-    return configs, vals
+    return hcat(configs...), vals
 end
 
 """
