@@ -7,11 +7,11 @@ import footnote from "markdown-it-footnote";
 export default defineConfig({
   base: 'REPLACE_ME_DOCUMENTER_VITEPRESS',// TODO: replace this in makedocs!
   title: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
-  description: "A VitePress Site",
+  description: "Documentation for NeuralQuantumStates.jl",
   lastUpdated: true,
   cleanUrls: true,
   outDir: 'REPLACE_ME_DOCUMENTER_VITEPRESS', // This is required for MarkdownVitepress to work correctly...
-  head: [['link', { rel: 'icon', href: 'REPLACE_ME_DOCUMENTER_VITEPRESS_FAVICON' }]],
+  head: [['link', { rel: 'icon', href: 'assets/favicon.ico' }]],
   ignoreDeadLinks: true,
 
   markdown: {
@@ -23,7 +23,8 @@ export default defineConfig({
     },
     theme: {
       light: "github-light",
-      dark: "github-dark"}
+      dark: "github-dark"
+    }
   },
   themeConfig: {
     outline: 'deep',
