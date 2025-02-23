@@ -5,6 +5,7 @@ import DefaultTheme from 'vitepress/theme'
 
 import { enhanceAppWithTabs } from 'vitepress-plugin-tabs/client'
 import './style.css'
+import './mathjax3.css'
 
 export default {
   extends: DefaultTheme,
