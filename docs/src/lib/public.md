@@ -11,5 +11,5 @@ Pages = ["public.md"]
 ```
 
 ```@autodocs
-Modules = [NeuralQuantumStates, NeuralQuantumStates.Lattices, NeuralQuantumStates.Hilberts]
+Modules = [NeuralQuantumStates, NeuralQuantumStates.Lattices, NeuralQuantumStates.Hilberts, NeuralQuantumStates.Operators]
 ```

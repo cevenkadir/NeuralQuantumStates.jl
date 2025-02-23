@@ -154,9 +154,10 @@ end
         N,n_lDoF,D,O
     }
 
-Return the connected basis configurations ``\vert s^\\prime \\rangle`` to a given operator
-    `O`, *i.e.* `operator`, for a given configuration ``\vert s \\rangle``, *i.e.* `sample`,
-    with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle``.
+Return the connected basis configurations ``\\vert s^\\prime \\rangle`` to a given operator
+    ``\\hat{O}``, *i.e.* `operator`, for a given configuration ``\\vert s \\rangle``, *i.e.*
+    `sample`, with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s
+    \\rangle``.
 For this function, `sample` needs to be a vector that contains only one configuration.
 
 # Arguments
@@ -247,7 +248,9 @@ end
 
 """
     connected_basis_configs(
-        operator::NeuralQuantumStates.Operators.BoseHubbardOperator{T,T_h,T_h_Array,Tᵢ,T_l,T_p,N,n_lDoF,D,O},
+        operator::NeuralQuantumStates.Operators.BoseHubbardOperator{
+            T,T_h,T_h_Array,Tᵢ,T_l,T_p,N,n_lDoF,D,O
+        },
         samples::AbstractVector{<:AbstractVector{T_h}};
         kwargs...
     ) where {
@@ -260,9 +263,10 @@ end
         N,n_lDoF,D,O
     }
 
-Return the connected basis configurations ``\vert s^\\prime \\rangle`` to a given operator
-    `O`, *i.e.* `operator`, for given configurations ``\vert s \\rangle``, *i.e.* `samples`,
-    with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle``.
+Return the connected basis configurations ``\\vert s^\\prime \\rangle`` to a given operator
+    ``\\hat{O}``, *i.e.* `operator`, for given configurations ``\\vert s \\rangle``, *i.e.*
+    `samples`, with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s
+    \\rangle``.
 For this function, `samples` needs to be a vector of vectors that contains the given
     configurations.
 
@@ -276,8 +280,8 @@ For this function, `samples` needs to be a vector of vectors that contains the g
 # Returns
 - `Vector{Tuple{T_h_Array{Union{T_h,Missing}, 2}, Vector{T}}}`: The ``N \\times M_i``
     matrices of ``M_i`` connected basis configurations and the vectors of `M_i` matrix
-    elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle`` for each the `i`-th
-    element of `samples`.
+    elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle`` for each the
+    ``i``-th element of `samples`.
 """
 function connected_basis_configs(
     operator::BoseHubbardOperator{T,T_h,T_h_Array,Tᵢ,T_l,T_p,N,n_lDoF,D,O},
@@ -312,9 +316,10 @@ end
         N,n_lDoF,D,O
     }
 
-Return the connected basis configurations ``\vert s^\\prime \\rangle`` to a given operator
-    `O`, *i.e.* `operator`, for given configurations ``\vert s \\rangle``, *i.e.* `samples`,
-    with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle``.
+Return the connected basis configurations ``\\vert s^\\prime \\rangle`` to a given operator
+    ``\\hat{O}``, *i.e.* `operator`, for given configurations ``\\vert s \\rangle``, *i.e.*
+    `samples`, with their matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s
+    \\rangle``.
 For this function, `samples` needs to be a ``\\dots \\times N`` array (or tensor) contains
     the given configurations.
 
@@ -322,16 +327,16 @@ For this function, `samples` needs to be a ``\\dots \\times N`` array (or tensor
 - `operator::NeuralQuantumStates.Operators.BoseHubbardOperator{
     T,T_h,T_h_Array,Tᵢ,T_l,T_p,N,n_lDoF,D,O}`: An instance of
     `NeuralQuantumStates.Operators.BoseHubbardOperator`.
-- `samples::AbstractArray{T_h}`: A `\\dots \\times N` array (or tensor) of the
+- `samples::AbstractArray{T_h}`: A ``\\dots \\times N`` array (or tensor) of the
     representative vectors for the given basis configurations.
 
 # Returns
-- `T_h_Array{Union{T_h,Missing}, ndims(samples) + 1}`: A `M_\\mathrm{max} \\times \\dots \\times N` array
-    (or tensor) of connected basis configurations where `M_\\mathrm{max}` is the maximum
-    of connections for each given configuration. Each element of the constructed
-        configurations as extra will be assigned as `missing`.
-- `Array{T, ndims(samples)}`: A `M_\\mathrm{max} \\times \\dots` array or (tensor) of matrix
-    elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle``. Each matrix
+- `T_h_Array{Union{T_h,Missing}, ndims(samples) + 1}`: A ``M_\\mathrm{max} \\times \\dots
+    \\times N`` array (or tensor) of connected basis configurations where
+    ``M_\\mathrm{max}`` is the maximum of connections for each given configuration. Each
+    element of the constructed configurations as extra will be assigned as `missing`.
+- `Array{T, ndims(samples)}`: A ``M_\\mathrm{max} \\times \\dots`` array or (tensor) of
+    matrix elements ``\\langle s^\\prime \\lvert \\hat{O} \\rvert s \\rangle``. Each matrix
     elements will be assigned as `missing`.
 """
 function connected_basis_configs(
