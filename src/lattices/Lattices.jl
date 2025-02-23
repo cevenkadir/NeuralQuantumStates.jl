@@ -3,7 +3,9 @@ module Lattices
 export AbstractLatticeBasis, LatticeBasis
 export AbstractLattice, Lattice
 
-export build
+export vertices
+
+export nv
 
 include("lattice.jl")
 include("predefined_lattices.jl")

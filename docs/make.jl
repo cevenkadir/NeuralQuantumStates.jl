@@ -17,6 +17,7 @@ makedocs(;
         "Manual" => Any[
             "Lattices"=>"manual/lattices.md",
             "Hilberts"=>"manual/hilberts.md",
+            "Operators"=>"manual/operators.md",
         ],
         "Reference" => Any[
             "Public API"=>"lib/public.md",

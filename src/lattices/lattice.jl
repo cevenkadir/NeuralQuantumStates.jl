@@ -1,7 +1,7 @@
 import Distances: evaluate
 
 using Distances: Metric
-using Graphs: Graph
+using Graphs: Graph, nv as _nv
 using MetaGraphsNext: MetaGraph
 using NearestNeighbors: BallTree, inrange, knn
 using Parameters
@@ -190,7 +190,7 @@ function LatticeBasis(vectors::AbstractVector{<:AbstractVector{T}}) where {T<:Re
     return LatticeBasis(reduce(hcat, vectors))
 end
 
-function _vertices(
+function vertices(
     shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,O}
 ) where {Tᵢ<:Integer,T<:Real,D,O}
     @assert D > 0 "dimension must be positive"
@@ -213,7 +213,7 @@ function _vertices(
 
     return labels, label_data
 end
-function _vertices(
+function vertices(
     shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,1}
 ) where {Tᵢ<:Integer,T<:Real,D}
     @assert D > 0 "dimension must be positive"
@@ -232,23 +232,23 @@ function _vertices(
 
     return labels, label_data
 end
-function _vertices(
-    shape::SVector{1,Tᵢ}, basis::AbstractLatticeBasis{T,1,1}
-) where {Tᵢ<:Integer,T<:Real}
-    n_vertices = prod(shape)
+# function vertices(
+#     shape::SVector{1,Tᵢ}, basis::AbstractLatticeBasis{T,1,1}
+# ) where {Tᵢ<:Integer,T<:Real}
+#     n_vertices = prod(shape)
 
-    labels_iter = 1:shape[1]
+#     labels_iter = 1:shape[1]
 
-    _position = label -> basis.site_offsets[:] .+
-                         sum(basis.vectors' .* (label .- T(1.0)), dims=1)[1, :]
+#     _position = label -> basis.site_offsets[:] .+
+#                          sum(basis.vectors' .* (label .- T(1.0)), dims=1)[1, :]
 
-    data_iter = Iterators.map(_position, labels_iter)
+#     data_iter = Iterators.map(_position, labels_iter)
 
-    labels = SVector{n_vertices,eltype(labels_iter)}(collect(labels_iter)[:])
-    label_data = SVector{n_vertices,SVector{D,T}}(collect(data_iter)[:])
+#     labels = SVector{n_vertices,eltype(labels_iter)}(collect(labels_iter)[:])
+#     label_data = SVector{n_vertices,SVector{1,T}}(collect(data_iter)[:])
 
-    return labels, label_data
-end
+#     return labels, label_data
+# end
 
 @with_kw struct _LatticeMetric{Tᵢ<:Integer,T<:Real,D,O} <: Metric
     shape::SVector{D,Tᵢ}
@@ -463,7 +463,7 @@ function Lattice(
 ) where {Tᵢ<:Integer,T<:Real,D,O}
     @assert max_order > 0 "order must be a positive integer"
 
-    ver_labels, ver_data = _vertices(shape, basis)
+    ver_labels, ver_data = vertices(shape, basis)
     n_vertices = length(ver_labels)
 
     metric = _LatticeMetric(shape, basis, periodic)
@@ -599,8 +599,10 @@ function Lattice(
     @assert length(custom_edges[1]) ==
             length(custom_edges[2]) "vectors in `custom_edges` must have the same length"
 
-    ver_labels, ver_data = _vertices(shape, basis)
+    ver_labels, ver_data = vertices(shape, basis)
 
+    println("ver_labels: ", eltype(ver_labels))
+    println(L)
     @assert eltype(ver_labels) == L "vertex label type must match"
 
     g = Graph(0)
@@ -672,4 +674,8 @@ function Lattice(
     custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}
 ) where {Tᵢ<:Integer,T<:Real,D,O,L}
     return Lattice(shape, basis, custom_edges, fill(false, D))
+end
+
+function nv(lattice::Lattice{Tᵢ,T,D,O}) where {Tᵢ<:Integer,T<:Real,D,O}
+    return _nv(lattice.metagraph)
 end

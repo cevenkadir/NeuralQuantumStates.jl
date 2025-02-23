@@ -152,12 +152,12 @@ function build(
 
     periodic = _vectorize(periodic, shape)
 
-    vectors = hypercube.edge_length * I(D)
+    vectors = edge_length * I(length(shape))
 
     basis = LatticeBasis(vectors)
 
     # create the graph depending on periodicity in the first dimension
-    if hypercube.periodic[1]
+    if periodic[1]
         g = cycle_graph(shape[1])
     else
         g = path_graph(shape[1])

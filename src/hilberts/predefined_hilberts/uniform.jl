@@ -1,4 +1,6 @@
 using NeuralQuantumStates.Hilberts
+using NeuralQuantumStates.Extras
+using Random
 
 function build(hilbert_type::Symbol, args...; kwargs...)
     return build(Val(hilbert_type), args...; kwargs...)
@@ -7,7 +9,7 @@ end
 """
     build(
         ::Val{:Spin}, s::T, N::Integer;
-        ∑Sz::Union{T_Sz,Nothing}=nothing
+        ∑Sz::Union{T_Sz,Nothing}=nothing, array_type::Type=Array
     ) where {T<:Union{Rational,Integer},T_Sz<:Real}
         -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
 
@@ -17,6 +19,7 @@ Build a finite uniform Hilbert space for a spin-`s` system.
 - `s::T`: Spin of the system.
 - `N::Integer`: Number of degrees of freedom.
 - `∑Sz::Union{T_Sz,Nothing}`: The total magnetization to be conserved. Default is `nothing`.
+- `array_type::Type`: The Vector type to be used in each state. Default is `Array`.
 
 # Returns
 - `NeuralQuantumStates.Hilberts.FiniteUniformHilbert`: The finite uniform Hilbert space for
@@ -24,7 +27,7 @@ Build a finite uniform Hilbert space for a spin-`s` system.
 """
 function build(
     ::Val{:Spin}, s::T, N::Integer;
-    ∑Sz::Union{T_Sz,Nothing}=nothing
+    ∑Sz::Union{T_Sz,Nothing}=nothing, array_type::Type=Array
 ) where {T<:Union{Rational,Integer},T_Sz<:Real}
     n_lDoF = 2s + 1 |> Integer
 
@@ -38,7 +41,7 @@ function build(
         constraint = SumConstraint{T_Sz}(∑Sz)
     end
 
-    return FiniteUniformHilbert{T,N,n_lDoF}(
+    return FiniteUniformHilbert{T,array_type,N,n_lDoF}(
         lDoF=lDoF,
         constraint=constraint,
         type=:Spin
@@ -48,7 +51,7 @@ end
 """
     build(
         ::Val{:Fock}, n_max::T, N::Integer;
-        ∑n::Union{T_n,Nothing}=nothing
+        ∑n::Union{T_n,Nothing}=nothing, array_type::Type=Array
     ) where {T<:Integer,T_n<:Real} -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
 
 Build a finite uniform Hilbert space for a Fock system.
@@ -58,6 +61,7 @@ Build a finite uniform Hilbert space for a Fock system.
 - `N::Integer`: Number of degrees of freedom.
 - `∑n::Union{T_n,Nothing}`: The total number of particles to be conserved. Default is
     `nothing`.
+- `array_type::Type`: The Vector type to be used in each state. Default is `Array`.
 
 # Returns
 - `NeuralQuantumStates.Hilberts.FiniteUniformHilbert`: The finite uniform Hilbert space for
@@ -65,7 +69,7 @@ Build a finite uniform Hilbert space for a Fock system.
 """
 function build(
     ::Val{:Fock}, n_max::T, N::Integer;
-    ∑n::Union{T_n,Nothing}=nothing
+    ∑n::Union{T_n,Nothing}=nothing, array_type::Type=Array
 ) where {T<:Integer,T_n<:Real}
     lDoF = range(0, n_max; step=1)
 
@@ -79,7 +83,7 @@ function build(
         constraint = SumConstraint{T_n}(∑n)
     end
 
-    return FiniteUniformHilbert{T,N,n_lDoF}(
+    return FiniteUniformHilbert{T,array_type,N,n_lDoF}(
         lDoF=lDoF,
         constraint=constraint,
         type=:Fock
@@ -87,19 +91,20 @@ function build(
 end
 
 """
-    build(::Val{:Qubit}, N::Integer) where {T<:Integer}
+    build(::Val{:Qubit}, N::Integer, array_type::Type=Array) where {T<:Integer}
         -> NeuralQuantumStates.Hilberts.FiniteUniformHilbert
 
 Build a finite uniform Hilbert space for a qubit system.
 
 # Arguments
 - `N::Integer`: Number of degrees of freedom.
+- `array_type::Type`: The Vector type to be used in each state. Default is `Array`.
 
 # Returns
 - `NeuralQuantumStates.Hilberts.FiniteUniformHilbert`: The finite uniform Hilbert space for
     a qubit system.
 """
-function build(::Val{:Qubit}, N::Integer)
+function build(::Val{:Qubit}, N::Integer; array_type::Type=Array)
     lDoF = range(0, 1; step=1)
     lDoF = SVector{length(lDoF)}(lDoF)
 
@@ -107,7 +112,7 @@ function build(::Val{:Qubit}, N::Integer)
 
     constraint = NoDiscreteHilbertConstraint()
 
-    return FiniteUniformHilbert{eltype(lDoF),N,n_lDoF}(
+    return FiniteUniformHilbert{eltype(lDoF),array_type,N,n_lDoF}(
         lDoF=lDoF,
         constraint=constraint,
         type=:Qubit
@@ -116,69 +121,108 @@ end
 
 """
     all_states(
-        hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}
-    ) where {T<:Real,N_DoF,N_lDoF} -> Vector{NTuple{N_DoF,T}}
+        hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}
+    ) where {T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF} -> Vector{Vector}
 
 Return all states in the given finite uniform Hilbert space.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}`: The finite
-    uniform Hilbert space.
+- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}`: The
+    finite uniform Hilbert space.
 
 # Returns
-- `Vector{NTuple{N_DoF,T}}`: All states in the given finite uniform Hilbert space.
+- `Vector{T_Array}`: All states in the given finite uniform Hilbert space.
 """
 function all_states(
-    hilbert::Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}
-) where {T<:Real,N_DoF,N_lDoF}
-    i = Iterators.product([hilbert.lDoF for _ in 1:N_DoF]...)
-    return Iterators.filter(
-               x -> Hilberts.check(hilbert.constraint, x),
-               i
-           ) |> collect |> unique
+    hilbert::Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}
+) where {T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF}
+    array_type_params = get_array_type_params(T_Array, T, (N_DoF,))
+    T_Array_w_params = T_Array{array_type_params...}
+    combinations = T_Array_w_params[]
+
+    for state in Iterators.product([hilbert.lDoF for _ in 1:N_DoF]...)
+        state = T_Array_w_params(state |> collect)
+        if Hilberts.check(hilbert.constraint, state)
+            push!(combinations, state)
+        end
+    end
+
+    unique!(combinations)
+
+    return combinations
 end
 
 """
-    all_states(hilbert::Hilberts.InfiniteUniformHilbert{T,N_DoF}) where
-        {T<:Real,N_DoF}
+    all_states(hilbert::Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}) where
+        {T<:Real,T_Array<:AbstractArray,N_DoF}
 
 Throws an `OverflowError` since the Hilbert space is infinite.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF}`: The infinite
-    uniform Hilbert space.
+- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}`: The
+    infinite uniform Hilbert space.
 """
-function all_states(hilbert::Hilberts.InfiniteUniformHilbert{T,N_DoF}) where {T<:Real,N_DoF}
+function all_states(hilbert::Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}) where
+{T<:Real,T_Array<:AbstractArray,N_DoF}
     throw(OverflowError("Infinite Hilbert space"))
 end
 
 """
-    all_states(hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{N,N_DoF}) where
-        {N,N_DoF} -> Vector{NTuple}
+    all_states(hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{T_C_Array,N,N_DoF}) where
+        {T_C_Array<:AbstractArray,N,N_DoF} -> Vector{NTuple}
 
 Return all states in the given composite uniform Hilbert space.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{N,N_DoF}`: The composite
-    uniform Hilbert space.
+- `hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{T_C_Array,N,N_DoF}`: The
+    composite uniform Hilbert space.
 
 # Returns
-- `Vector{NTuple}`: All states in the given composite uniform Hilbert space.
+- `Vector{T_C_Array}`: All states in the given composite uniform Hilbert space.
 """
-function all_states(composite_hilbert::CompositeUniformHilbert{N,N_DoF}) where {N,N_DoF}
-    i = Iterators.product(
+function all_states(composite_hilbert::CompositeUniformHilbert{T_C_Array,N,N_DoF}) where
+{T_C_Array<:AbstractArray,N,N_DoF}
+    c_array_type_params = get_array_type_params(
+        T_C_Array,
+        Union{[
+            begin
+                T_Arrayᵢ = typeof(hilbertᵢ).parameters[2]
+                Tᵢ = typeof(hilbertᵢ).parameters[1]
+                N_DoFᵢ = typeof(hilbertᵢ).parameters[3]
+                array_type_paramsᵢ = get_array_type_params(T_Arrayᵢ, Tᵢ, (N_DoFᵢ,))
+                T_Arrayᵢ{array_type_paramsᵢ...}
+            end
+            for hilbertᵢ in composite_hilbert.hilberts
+        ]...},
+        (length(composite_hilbert.hilberts),)
+    )
+    T_C_Array_w_params = T_C_Array{c_array_type_params...}
+    combinations = T_C_Array_w_params[]
+
+    for state in Iterators.product(
         [all_states(hilbert) for hilbert in composite_hilbert.hilberts]...
     )
-    return Iterators.filter(
-               x -> Hilberts.check(composite_hilbert.composite_constraint, x),
-               i
-           ) |> collect |> unique
+        state = T_C_Array_w_params(state |> collect)
+
+        if Hilberts.check(composite_hilbert.constraint, state) &&
+           all(
+            Hilberts.check(local_hilbert.constraint, state[id_hilbert])
+            for (id_hilbert, local_hilbert) in enumerate(composite_hilbert.hilberts)
+        )
+            push!(combinations, state)
+        end
+    end
+
+    unique!(combinations)
+
+    return combinations
 end
 
 """
     ⊗(
         (hilberts::NeuralQuantumStates.Hilberts.UniformHilbert)...;
-        composite_constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint=NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint()
+        constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint=NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint(),
+        array_type::Type=Array
     ) -> NeuralQuantumStates.Hilberts.CompositeUniformHilbert
 
 Return a composite uniform Hilbert space by taking the tensor product of the given uniform
@@ -187,9 +231,10 @@ Return a composite uniform Hilbert space by taking the tensor product of the giv
 # Arguments
 - `hilberts::NeuralQuantumStates.Hilberts.UniformHilbert`: The uniform Hilbert spaces to be
     tensor producted.
-- `composite_constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint`:
+- `constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint`:
     The composite constraint to be applied. Default is
     `NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint()`.
+- `array_type::Type`: The Vector type to be used in each state. Default is `Array`.
 
 # Returns
 - `NeuralQuantumStates.Hilberts.CompositeUniformHilbert`: The generated composite uniform
@@ -197,12 +242,14 @@ Return a composite uniform Hilbert space by taking the tensor product of the giv
 """
 function ⊗(
     (hilberts::Hilberts.UniformHilbert)...;
-    composite_constraint::Hilberts.AbstractCompositeDiscreteHilbertConstraint=Hilberts.NoCompositeDiscreteHilbertConstraint()
+    constraint::Hilberts.AbstractCompositeDiscreteHilbertConstraint=Hilberts.NoCompositeDiscreteHilbertConstraint(),
+    array_type::Type=Array
 )
+    N_hilberts = length(hilberts)
     total_N_DoF = sum(Hilberts.n_DoF.(hilberts))
 
-    return Hilberts.CompositeUniformHilbert{length(hilberts),total_N_DoF}(
-        hilberts=hilberts, composite_constraint=composite_constraint
+    return Hilberts.CompositeUniformHilbert{array_type,N_hilberts,total_N_DoF}(
+        hilberts=hilberts, constraint=constraint
     )
 end
 
@@ -220,7 +267,7 @@ Return the states corresponding to the given indices in the given uniform Hilber
     representation.
 
 # Returns
-- `Vector{NTuple}`: A vector of states corresponding to the given indices in the state
+- `Vector{Vector}`: A vector of states corresponding to the given indices in the state
     representation.
 """
 function state_index_to_state(
@@ -242,7 +289,7 @@ Return the state corresponding to the given index in the given uniform Hilbert s
     representation.
 
 # Returns
-- `NTuple`: A state corresponding to the given index in the state representation.
+- `Array`: A state corresponding to the given index in the state representation.
 """
 function state_index_to_state(
     hilbert::Hilberts.UniformHilbert{N_DoF}, index::Int
@@ -253,21 +300,21 @@ end
 """
     state_to_state_index(
         hilbert::NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF},
-        states::AbstractVector{NTuple{N_DoF,T}}
+        states::AbstractVector{<:AbstractVector{T}}
     ) where {N_DoF,T<:Real} -> Vector{Integer}
 
 Return the indices of the given states in the given uniform Hilbert space.
 
 # Arguments
 - `hilbert::NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}`: The uniform Hilbert space.
-- `states::AbstractVector{NTuple{N_DoF,T}}`: The states to be returned in the index
+- `states::AbstractVector{<:AbstractVector{T}}`: The states to be returned in the index
     representation.
 
 # Returns
 - `Vector{Integer}`: A vector of indices of the given states in the index representation.
 """
 function state_to_state_index(
-    hilbert::Hilberts.UniformHilbert{N_DoF}, states::AbstractVector{NTuple{N_DoF,T}}
+    hilbert::Hilberts.UniformHilbert{N_DoF}, states::AbstractVector{<:AbstractVector{T}}
 ) where {N_DoF,T<:Real}
     allstates = all_states(hilbert)
     return [findfirst(x -> x == state, allstates) for state in states]
@@ -276,22 +323,34 @@ end
 """
     state_to_state_index(
         hilbert::NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF},
-        state::NTuple{N_DoF,T}
+        state::AbstractVector{T}
     ) where {N_DoF,T<:Real} -> Integer
 
 Return the index of the given state in the given uniform Hilbert space.
 
 # Arguments
 - `hilbert::NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}`: The uniform Hilbert space.
-- `state::NTuple{N_DoF,T}`: The state to be returned in the index representation.
+- `state::AbstractVector{T}`: The state to be returned in the index representation.
 
 # Returns
 - `Integer`: The index of the given state in the index representation.
 """
 function state_to_state_index(
-    hilbert::Hilberts.UniformHilbert{N_DoF}, state::NTuple{N_DoF,T}
+    hilbert::Hilberts.UniformHilbert{N_DoF}, state::AbstractVector{T}
 ) where {N_DoF,T<:Real}
     return state_to_state_index(hilbert, [state]).first
 end
 
-#! WRITE random_state function
+function random_state(
+    hilbert::Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}, seed::Int=0
+) where {T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF}
+    Random.seed!(seed)
+    random_index = rand(1:n_states(hilbert))
+    return all_states(hilbert)[random_index]
+end
+
+function random_state(
+    hilbert::Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}, seed::Int=0
+) where {T<:Real,T_Array<:AbstractArray,N_DoF}
+    throw("Not implemented")
+end
