@@ -27,7 +27,10 @@ export default defineConfig({
   },
   themeConfig: {
     outline: 'deep',
-    logo: 'REPLACE_ME_DOCUMENTER_VITEPRESS',
+    logo: {
+      light: "assets/logo.svg",
+      dark: "assets/logo-dark.svg",
+    },
     search: {
       provider: 'local',
       options: {
