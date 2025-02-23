@@ -601,8 +601,6 @@ function Lattice(
 
     ver_labels, ver_data = vertices(shape, basis)
 
-    println("ver_labels: ", eltype(ver_labels))
-    println(L)
     @assert eltype(ver_labels) == L "vertex label type must match"
 
     g = Graph(0)
