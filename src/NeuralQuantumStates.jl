@@ -1,7 +1,18 @@
 module NeuralQuantumStates
 
 # Write your package code here.
-include("lattices/Lattices.jl")
-include("hilberts/Hilberts.jl")
+include("./extras/Extras.jl")
+using .Extras
+
+include("./lattices/Lattices.jl")
+using .Lattices
+
+include("./hilberts/Hilberts.jl")
+using .Hilberts
+
+include("./operators/Operators.jl")
+using .Operators
+
+
 
 end

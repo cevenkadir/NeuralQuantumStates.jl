@@ -15,22 +15,22 @@ struct NoDiscreteHilbertConstraint <: AbstractDiscreteHilbertConstraint end
 """
     check(
         constraint::NeuralQuantumStates.Hilberts.NoDiscreteHilbertConstraint,
-        x::NTuple{N_DoF,T_lDoF}
-    ) where {T_lDoF<:Real,N_DoF} -> Bool
+        x::AbstractVector{T_lDoF}
+    ) where {T_lDoF<:Real} -> Bool
 
 Always return `true` if there is no Hilbert space constraint.
 
 # Arguments
 - `constraint::NeuralQuantumStates.Hilberts.NoDiscreteHilbertConstraint`: A
     `NeuralQuantumStates.Hilberts.NoDiscreteHilbertConstraint` object.
-- `x::NTuple{N_DoF,T_lDoF}`: A state to be checked.
+- `x::AbstractVector{T_lDoF}`: A state to be checked.
 
 # Returns
 - `Bool`: Always `true`.
 """
 function check(
-    constraint::NoDiscreteHilbertConstraint, x::NTuple{N_DoF,T_lDoF}
-) where {T_lDoF<:Real,N_DoF}
+    constraint::NoDiscreteHilbertConstraint, x::AbstractVector{T_lDoF}
+) where {T_lDoF<:Real}
     return true
 end
 
@@ -49,23 +49,23 @@ end
 
 """
     check(
-        constraint::NeuralQuantumStates.Hilberts.SumConstraint{T}, x::NTuple{N_DoF,T_lDoF}
-    ) where {T<:Real,T_lDoF<:Real,N_DoF} -> Bool
+        constraint::NeuralQuantumStates.Hilberts.SumConstraint{T}, x::AbstractVector{T_lDoF}
+    ) where {T<:Real,T_lDoF<:Real} -> Bool
 
 Check if the sum of the elements of a given state is equal to the given sum value.
 
 # Arguments
 - `constraint::NeuralQuantumStates.Hilberts.SumConstraint{T}`: A
     `NeuralQuantumStates.Hilberts.SumConstraint` object.
-- `x::NTuple{N_DoF,T_lDoF}`: A state to be checked.
+- `x::AbstractVector{T_lDoF}`: A state to be checked.
 
 # Returns
 - `Bool`: `true` if the sum of the elements of the given state is equal to the given sum
     value.
 """
 function check(
-    constraint::SumConstraint{T}, x::NTuple{N_DoF,T_lDoF}
-) where {T<:Real,T_lDoF<:Real,N_DoF}
+    constraint::SumConstraint{T}, x::AbstractVector{T_lDoF}
+) where {T<:Real,T_lDoF<:Real}
     return sum(x) ≈ constraint.sum_value
 end
 
@@ -84,22 +84,22 @@ struct NoCompositeDiscreteHilbertConstraint <: AbstractCompositeDiscreteHilbertC
 """
     check(
         constraint::NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint,
-        x::NTuple{N_HS,NTuple}
-    ) where {N_HS} -> Bool
+        x::AbstractVector{AbstractVector}
+    ) -> Bool
 
 Always return `true` if there is no composite discrete Hilbert space constraint.
 
 # Arguments
 - `constraint::NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint`: A
     `NeuralQuantumStates.Hilberts.NoCompositeDiscreteHilbertConstraint` object.
-- `x::NTuple{N_HS,NTuple}`: A composite state to be checked.
+- `x::AbstractVector{AbstractVector}`: A composite state to be checked.
 
 # Returns
 - `Bool`: Always `true`.
 """
 function check(
-    constraint::NoCompositeDiscreteHilbertConstraint, x::NTuple{N_HS,NTuple}
-) where {N_HS}
+    constraint::NoCompositeDiscreteHilbertConstraint, x::AbstractVector{<:AbstractVector}
+)
     return true
 end
 
@@ -114,7 +114,7 @@ end
 """
     check(
         constraint::NeuralQuantumStates.Hilberts.CompositeSumConstraint{T,N_HS},
-        x::NTuple{N_HS,NTuple}
+        x::AbstractVector{AbstractVector}
     ) where {T<:Real,N_HS} -> Bool
 
 Check if the sum of the elements of a given composite state is equal to the given sum
@@ -123,15 +123,16 @@ Check if the sum of the elements of a given composite state is equal to the give
 # Arguments
 - `constraint::NeuralQuantumStates.Hilberts.CompositeSumConstraint{T,N_HS}`: A
     `NeuralQuantumStates.Hilberts.CompositeSumConstraint` object.
-- `x::NTuple{N_HS,NTuple}`: A composite state to be checked.
+- `x::AbstractVector{AbstractVector}`: A composite state to be checked.
 
 # Returns
 - `Bool`: `true` if the sum of the elements of the given composite state is equal to the
     given sum values.
 """
 function check(
-    constraint::CompositeSumConstraint{T,N_HS}, x::NTuple{N_HS,NTuple}
+    constraint::CompositeSumConstraint{T,N_HS}, x::AbstractVector{AbstractVector}
 ) where {T<:Real,N_HS}
+    @assert N_HS == length(x)
     return all(sum(x[i]) ≈ constraint.sum_values[i] for i in 1:N_HS)
 end
 
@@ -140,7 +141,7 @@ abstract type DiscreteHilbert{N_DoF} <: AbstractHilbert end
 abstract type UniformHilbert{N_DoF} <: DiscreteHilbert{N_DoF} end
 
 """
-    FiniteUniformHilbert{T<:Real,N_DoF,N_lDoF}
+    FiniteUniformHilbert{T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF}
         <: NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}
 
 A finite uniform Hilbert space.
@@ -151,7 +152,7 @@ A finite uniform Hilbert space.
     to the uniform Hilbert space.
 - `type::Symbol`: The type of the uniform Hilbert space.
 """
-@with_kw struct FiniteUniformHilbert{T<:Real,N_DoF,N_lDoF} <: UniformHilbert{N_DoF}
+@with_kw struct FiniteUniformHilbert{T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF} <: UniformHilbert{N_DoF}
     lDoF::SVector{N_lDoF,T}
     constraint::AbstractDiscreteHilbertConstraint
     type::Symbol
@@ -163,7 +164,7 @@ A finite uniform Hilbert space.
 end
 
 """
-    InfiniteUniformHilbert{T<:Real,N_DoF}
+    InfiniteUniformHilbert{T<:Real,T_Array<:AbstractArray,N_DoF}
         <: NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}
 
 An infinite uniform Hilbert space.
@@ -171,7 +172,7 @@ An infinite uniform Hilbert space.
 # Fields
 - `type::Symbol`: The type of the uniform Hilbert space.
 """
-@with_kw struct InfiniteUniformHilbert{T<:Real,N_DoF} <: UniformHilbert{N_DoF}
+@with_kw struct InfiniteUniformHilbert{T<:Real,T_Array<:AbstractArray,N_DoF} <: UniformHilbert{N_DoF}
     type::Symbol
     @assert N_DoF isa Integer "number of degrees of freedom must be an integer"
     @assert N_DoF > 0 "number of degrees of freedom must be positive"
@@ -192,33 +193,33 @@ Get the number of degrees of freedom of the given uniform Hilbert space.
 n_DoF(hilbert::UniformHilbert{N_DoF}) where {N_DoF} = N_DoF
 
 """
-    n_lDoF(hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF})
-        where {T<:Real,N_DoF,N_lDoF} -> typeof(N_lDoF)
+    n_lDoF(hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF})
+        where {T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF} -> typeof(N_lDoF)
 
 Get the number of local degrees of freedom of the given finite uniform Hilbert space.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,N_DoF,N_lDoF}`: A finite
+- `hilbert::NeuralQuantumStates.Hilberts.FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}`: A finite
     uniform Hilbert space.
 
 # Returns
 - `typeof(N_lDoF)`: The number of local degrees of freedom of the given finite uniform
     Hilbert space.
 """
-n_lDoF(hilbert::FiniteUniformHilbert{T,N_DoF,N_lDoF}) where {T<:Real,N_DoF,N_lDoF} = N_lDoF
+n_lDoF(hilbert::FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}) where {T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF} = N_lDoF
 
 """
-    n_lDoF(hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF})
-        where {T<:Real,N_DoF} -> typeof(N_DoF)
+    n_lDoF(hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF})
+        where {T<:Real,T_Array<:AbstractArray,N_DoF} -> typeof(N_DoF)
 
 Throws an `OverflowError` since the number of local degrees of freedom of an infinite
     uniform Hilbert space is infinite.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF}`: An infinite
+- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}`: An infinite
     uniform Hilbert space.
 """
-function n_lDoF(hilbert::InfiniteUniformHilbert{T,N_DoF}) where {T<:Real,N_DoF}
+function n_lDoF(hilbert::InfiniteUniformHilbert{T,T_Array,N_DoF}) where {T<:Real,T_Array<:AbstractArray,N_DoF}
     throw(OverflowError("Infinite local Hilbert space"))
 end
 
@@ -235,40 +236,42 @@ Get the number of states of the given finite uniform Hilbert space.
 # Returns
 - `Integer`: The number of states of the given finite uniform Hilbert space.
 """
-function n_states(hilbert::FiniteUniformHilbert{T,N_DoF,N_lDoF}) where
-{T<:Real,N_DoF,N_lDoF}
+function n_states(hilbert::FiniteUniformHilbert{T,T_Array,N_DoF,N_lDoF}) where
+{T<:Real,T_Array<:AbstractArray,N_DoF,N_lDoF}
     return length(all_states(hilbert))
 end
 
 """
-    n_states(hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF})
-        where {T<:Real,N_DoF} -> Integer
+    n_states(hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF})
+        where {T<:Real,T_Array<:AbstractArray,N_DoF} -> Integer
 
 Throws an `OverflowError` since the number of states of an infinite uniform Hilbert space
     is infinite.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,N_DoF}`: An infinite
+- `hilbert::NeuralQuantumStates.Hilberts.InfiniteUniformHilbert{T,T_Array,N_DoF}`: An infinite
     uniform Hilbert space.
 """
-function n_states(hilbert::InfiniteUniformHilbert{T,N_DoF}) where {T<:Real,N_DoF}
+function n_states(hilbert::InfiniteUniformHilbert{T,T_Array,N_DoF}) where {T<:Real,T_Array<:AbstractArray,N_DoF}
     throw(OverflowError("Infinite Hilbert space"))
 end
 
 """
-    CompositeUniformHilbert{N,N_DoF} <: NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}
+    CompositeUniformHilbert{T_C_Array<:AbstractArray,N,N_DoF} <:
+    NeuralQuantumStates.Hilberts.UniformHilbert{N_DoF}
 
 A composite uniform Hilbert space.
 
 # Fields
 - `hilberts::NTuple{N,NeuralQuantumStates.Hilberts.UniformHilbert}`: Uniform Hilbert
     spaces to be composed.
-- `composite_constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint`:
+- `constraint::NeuralQuantumStates.Hilberts.AbstractCompositeDiscreteHilbertConstraint`:
     A constraint to the composite uniform Hilbert space.
 """
-@with_kw struct CompositeUniformHilbert{N,N_DoF} <: UniformHilbert{N_DoF}
+@with_kw struct CompositeUniformHilbert{T_C_Array<:AbstractArray,N,N_DoF} <:
+                UniformHilbert{N_DoF}
     hilberts::NTuple{N,UniformHilbert}
-    composite_constraint::AbstractCompositeDiscreteHilbertConstraint
+    constraint::AbstractCompositeDiscreteHilbertConstraint
     @assert N_DoF isa Integer "number of degrees of freedom must be an integer"
     @assert N_DoF > 0 "number of degrees of freedom must be positive"
     @assert N_DoF == sum(n_DoF.(hilberts)) "number of degrees of freedom must match the sum of the number of degrees of freedom of the given uniform Hilbert spaces"
@@ -276,23 +279,25 @@ end
 
 """
     n_lDoF(
-        hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{N_DoF},
+        hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{T_C_Array,N,N_DoF},
         dof_index::integer
-    ) where {N_DoF} -> Integer
+    ) where {T_C_Array<:AbstractArray,N,N_DoF} -> Integer
 
 Get the number of local degrees of freedom of the given composite uniform Hilbert space at
     the given degree of freedom index.
 
 # Arguments
-- `hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{N_DoF}`: A composite
-    uniform Hilbert space.
+- `hilbert::NeuralQuantumStates.Hilberts.CompositeUniformHilbert{T_C_Array,N,N_DoF}`: A
+    composite uniform Hilbert space.
 - `dof_index::Integer`: A degree of freedom index.
 
 # Returns
 - `Integer`: The number of local degrees of freedom of the given composite uniform Hilbert
     space at the given degree of freedom index.
 """
-function n_lDoF(hilbert::CompositeUniformHilbert{N_DoF}, dof_index::Integer) where {N_DoF}
+function n_lDoF(
+    hilbert::CompositeUniformHilbert{T_C_Array,N,N_DoF}, dof_index::Integer
+) where {T_C_Array<:AbstractArray,N,N_DoF}
     lengths = n_DoF.(hilbert.hilberts)
     cumsum_lengths = cumsum(lengths)
 
