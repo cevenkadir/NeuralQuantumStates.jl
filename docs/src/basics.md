@@ -1,11 +1,11 @@
 ## Installation
-If you still want to try it out, you can install it from the Julia REPL by entering:
+If you still want to try it out, you can install it from the Julia REPL by running:
 ```julia
 julia> import Pkg; Pkg.add("https://github.com/cevenkadir/NeuralQuantumStates.jl")
 ```
 
 ## Basics
-You can start to use the package by entering:
+You can start to use the package by runnung:
 ```@example 1
 using NeuralQuantumStates: Lattices, Hilberts, Operators
 ```
