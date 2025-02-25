@@ -11,15 +11,23 @@ using NeuralQuantumStates: Lattices, Hilberts, Operators
 ```
 As an example, let's construct the Hamiltonian of a transverse-field Ising chain. For that, first initialize a chain lattice of length 8:
 ```@example 1
-lat = Lattices.build(:Hypercube, [8], 1.0; periodic=[true])
+lat = Lattices.build(
+    :Hypercube, [8], 1.0;
+    periodic=[true]
+)
 ```
 Then, choose a spin-1/2 as the basis for the Hilbert space:
 ```@example 1
-hil = Hilberts.build(:Spin, 1 // 2, Lattices.nv(lat))
+hil = Hilberts.build(
+    :Spin, 1 // 2, Lattices.nv(lat)
+)
 ```
 With these two, construct the Hamiltonian operator of the model:
 ```@example 1
-ham = Operators.build(:TransverseFieldIsing, hil, lat; J=1.0, h_x=1.0, h_z=1.0)
+ham = Operators.build(
+    :TransverseFieldIsing, hil, lat;
+    J=1.0, h_x=1.0, h_z=1.0
+)
 ```
 To test it, let's find out the connected basis configurations, `s_prime`, to the Hamiltonian for the following 2 basis configurations with their matrix elements, `mels`:
 ```@example 1
