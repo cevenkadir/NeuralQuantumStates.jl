@@ -90,7 +90,7 @@ LatticeBasis(vector::T) where {T<:Real} = LatticeBasis(vector, T(0.0))
     ) where {T<:Real} -> NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],1}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
-    `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
+    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
     `site_offset`.
 
 # Arguments
@@ -102,7 +102,7 @@ Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit c
 # Returns
 - `NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],1}`: The defined
     `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
-    `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
+    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
     `site_offset`.
 """
 function LatticeBasis(
@@ -124,7 +124,7 @@ end
         -> NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}
 
 Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
-    `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
+    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 
 # Arguments
@@ -132,12 +132,12 @@ Define a `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit c
     cell. Each column of the matrix is a primitive vector.
 - `site_offsets::AbstractMatrix{T}`: A matrix for the site offsets of the lattice basis in
     the unit cell. Each column of the matrix is a site offset vector. Defaults to
-    `zeros(T, size(vectors)[1], 1)`.
+    `zeros(T, size(vectors, 1), 1)`.
 
 # Returns
 - `NeuralQuantumStates.Lattices.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}`: The
     defined `NeuralQuantumStates.Lattices.LatticeBasis` for representing the unit cell of a
-    `size(vectors)[1]`-dimensional lattice with the given primitive `vectors` and
+    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
     `site_offsets`.
 """
 function LatticeBasis(
@@ -148,12 +148,12 @@ function LatticeBasis(
 
     n_dims, = size(vectors)
 
-    n_offsets = size(site_offsets)[2]
+    n_offsets = size(site_offsets, 2)
 
     return LatticeBasis{T,n_dims,n_offsets}(vectors, site_offsets)
 end
 function LatticeBasis(vectors::AbstractMatrix{T}) where {T<:Real}
-    return LatticeBasis(vectors, zeros(T, size(vectors)[1]))
+    return LatticeBasis(vectors, zeros(T, size(vectors, 1)))
 end
 """
     LatticeBasis(

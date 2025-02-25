@@ -6,10 +6,10 @@ CurrentModule = NeuralQuantumStates
 
 🚧 **Under construction** 🚧
 
-## Functions
+## How to build a lattice?
 
-### `Lattices.build`
-[`Lattices.build`](@ref) is used to build a `Lattices.Lattice` instance for common lattice structures, such as a hypercube.
+### via `Lattices.build`
+The most straightforward way to build a common lattice structure, such as a hypercube, is to utilize [`Lattices.build`](@ref NeuralQuantumStates.Lattices.build). This function depending on arguments and keywords creates an instance of [`Lattices.Lattice`](@ref NeuralQuantumStates.Lattices.Lattice) of the given lattice.
 
 ::::tabs
 
@@ -78,20 +78,86 @@ Lattices.build(
 ```
 ::::
 
-### `Lattices.vertices`
-[`Lattices.vertices`](@ref) is used to get the labels and the label data from of all the vertices of a given a `Lattices.Lattice` instance:
-```@example 1
+### via `Lattices.LatticeBasis` and `Lattices.Lattice`
+If your lattice has a special structure or not already defined in this package, first, define your [`Lattices.LatticeBasis`](@ref NeuralQuantumStates.LatticeBasis) instance with the chosen basis vectors and lattice site offsets:
+```@example hard_way
 using NeuralQuantumStates: Lattices # hide
-lat = Lattices.build(
-    :Hypercube, [3, 4, 5], 2.0;
-    periodic=[false, true, false]
-);
-labels, label_data = Lattices.vertices(lat.shape, lat.basis);
+basis_vectors = [
+    1.0 0.25;
+    0.1 0.4
+];
+site_offsets = [
+    0.0 0.0;
+    0.15 0.20
+];
+lat_basis = Lattices.LatticeBasis(basis_vectors, site_offsets)
+```
+#### for edges from the ``k``-th nearest neighbors
+If you want to consider a lattice of shape ``[4, 3]`` for the nearest neighbors, run
+
+::::tabs
+
+== open boundary conditions
+
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis;
+    max_order=1
+)
+```
+
+== periodic boundary conditions
+
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis, [true, true];
+    max_order=1
+)
+```
+
+== custom boundary conditions
+
+If the lattice has periodic boundary conditions only in the first dimension,
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis, [true, false];
+    max_order=1
+)
+```
+::::
+
+#### for custom edges
+If you want to define the custom edges for the lattice, first, define the custom edges
+
+```@example hard_way
+custom_edges = [((:A, 1, 1), (:B, 3, 3)),], [1,];
 nothing # hide
 ```
-```@example 1
-labels
+
+::::tabs
+
+== open boundary conditions
+
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis, custom_edges
+)
 ```
-```@example 1
-label_data
+
+== periodic boundary conditions
+
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis, custom_edges, [true, true]
+)
 ```
+
+== custom boundary conditions
+
+If the lattice has periodic boundary conditions only in the first dimension,
+```@example hard_way
+Lattices.Lattice(
+    [4, 3], lat_basis, custom_edges, [true, false]
+)
+```
+::::
