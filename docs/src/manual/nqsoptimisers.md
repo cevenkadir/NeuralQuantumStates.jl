@@ -85,7 +85,7 @@ left out rather than shipped half-done.
 
 ## Quick example
 
-```@example index
+```@example nqsoptimisers
 using NQSOptimisers, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random, LinearAlgebra
 

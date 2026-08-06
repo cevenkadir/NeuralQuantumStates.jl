@@ -63,7 +63,7 @@ exact `|ψ|²`, and the test suite checks the total-variation distance between t
 
 ## Quick example
 
-```@example index
+```@example nqssamplers
 using NQSSamplers, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
@@ -88,6 +88,6 @@ expect(vs, H)
 
 Compare against the exact answer for the same parameters:
 
-```@example index
+```@example nqssamplers
 expect(FullSumState(a, θ, AutoForwardDiff()), H)
 ```

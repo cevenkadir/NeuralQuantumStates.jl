@@ -76,7 +76,7 @@ packages is a dependency here; load the one you want and pass it.
 
 ## Quick example
 
-```@example index
+```@example nqscore
 using NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
@@ -92,7 +92,7 @@ vs = FullSumState(a, init_parameters(a, Xoshiro(0); scale=0.3), AutoForwardDiff(
 expect(vs, H)
 ```
 
-```@example index
+```@example nqscore
 stats, gradient = expect_and_grad(vs, H)
 stats
 ```

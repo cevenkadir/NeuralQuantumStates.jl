@@ -55,7 +55,7 @@ once `|Re z|` passes about 710 — which an RBM reaches routinely as its weights
 
 ## Quick example
 
-```@example index
+```@example nqsansatze
 using NQSAnsatze, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
@@ -71,7 +71,7 @@ exponentially, so the two cross over quickly — at six sites an `alpha = 2` RBM
 parameters than there are basis states, and only past roughly eight does it start compressing.
 That crossover is why an RBM is worth nothing on a toy system and everything on a real one.
 
-```@example index
+```@example nqsansatze
 ops = local_operators(spec)
 H = OpSum(vcat(
     [Op(2 .* ops.sz, i) * Op(2 .* ops.sz, mod1(i + 1, nsites)) for i in 1:nsites],

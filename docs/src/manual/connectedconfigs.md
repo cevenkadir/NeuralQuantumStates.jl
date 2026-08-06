@@ -28,7 +28,7 @@ duplicated.
 
 ## Quick example
 
-```@example index
+```@example connectedconfigs
 using ConnectedConfigs, OperatorAlgebra, SymBasis
 
 spec, nsites = Spin(1 // 2), 4
@@ -48,7 +48,7 @@ res.mels
 `res.configs` holds the connected configurations as packed integers,
 [`configurations`](@ref) unpacks them into physical local values:
 
-```@example index
+```@example connectedconfigs
 configurations(spec, res.configs[:, 1], nsites)
 ```
 
