@@ -60,7 +60,11 @@ end
             theirs = dense_from_operator_algebra(H, spec, nsites)
 
             @test size(mine) == size(theirs)
-            # Basis-ordering-independent invariants.
+            # Only basis-ordering-independent invariants, and that is not fussiness: the two
+            # packages number digits in opposite directions -- SymBasis makes site 1 the least
+            # significant digit, OperatorAlgebra's `sparse` the most -- so the two matrices are
+            # related by a permutation and comparing them entrywise would fail. See `oa_index`
+            # in `kernel.jl` for the translation, used where an entrywise check is wanted.
             @test eigvals(Hermitian(mine)) ≈ eigvals(Hermitian(theirs))
             @test tr(mine) ≈ tr(theirs)
             @test norm(mine) ≈ norm(theirs)

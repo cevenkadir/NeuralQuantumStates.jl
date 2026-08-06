@@ -122,6 +122,7 @@ loaded_package_names() = Set(m.name for m in keys(Base.loaded_modules))
     end
 end
 
+include("kernel.jl")
 include("golden.jl")
 include("exact.jl")
 include("symmetry.jl")
