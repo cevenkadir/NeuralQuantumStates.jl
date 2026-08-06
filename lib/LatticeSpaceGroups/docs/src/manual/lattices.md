@@ -4,11 +4,6 @@ CurrentModule = LatticeSpaceGroups
 
 # Lattices
 
-Lattices come from `LatticeSpaceGroups`, which the umbrella re-exports — so everything on this
-page is available from `using NeuralQuantumStates`. The package also stands alone, depending on
-StaticArrays and nothing else, for anyone who wants lattice geometry without the
-neural-network stack.
-
 ```@example lattices
 using LatticeSpaceGroups
 ```
