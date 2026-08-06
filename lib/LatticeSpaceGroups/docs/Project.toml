@@ -1,0 +1,9 @@
+[deps]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+LatticeSpaceGroups = "b58f0687-8695-4e57-9eeb-fda788602521"
+
+[sources]
+LatticeSpaceGroups = {path = ".."}
+
+[compat]
+Documenter = "1"
