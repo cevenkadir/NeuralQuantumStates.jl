@@ -1,0 +1,41 @@
+name: Doc Preview Cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+# Ensure that only one "Doc Preview Cleanup" workflow is force pushing at a time
+concurrency:
+  group: doc-preview-cleanup
+  cancel-in-progress: false
+
+jobs:
+  doc-preview-cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout gh-pages branch
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+      # There are two preview trees, because this repository publishes two Documenter sites:
+      # the umbrella's at the root and LatticeSpaceGroups' under its own subfolder.
+      - name: Delete previews and history + push changes
+        run: |
+          deleted=0
+          for dir in "previews/PR${PR}" "LatticeSpaceGroups/previews/PR${PR}"; do
+              if [ -d "${dir}" ]; then
+                  git config user.name "Documenter.jl"
+                  git config user.email "documenter@juliadocs.github.io"
+                  git rm -rf "${dir}"
+                  deleted=1
+              fi
+          done
+          if [ "${deleted}" = "1" ]; then
+              git commit -m "delete preview"
+              git branch gh-pages-new "$(echo "delete history" | git commit-tree "HEAD^{tree}")"
+              git push --force origin gh-pages-new:gh-pages
+          fi
+        env:
+          PR: ${{ github.event.number }}

@@ -1,0 +1,84 @@
+name: Documentation
+
+on:
+  push:
+    branches:
+      - main
+    tags: '*'
+  pull_request:
+  workflow_dispatch:
+
+# This repository publishes two Documenter sites to the same `gh-pages` branch: the umbrella at
+# the root, and LatticeSpaceGroups under `LatticeSpaceGroups/` (it is registered separately, so
+# it has its own version selector and its own tags). Their content never overlaps -- Documenter
+# confines a deployment to its `dirname` -- but each one clones, commits and pushes to the same
+# branch, so two of them running at once would lose a push to a non-fast-forward rejection.
+#
+# Cancelling is off for the same reason: a job interrupted mid-push is worse than a slow queue.
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  umbrella:
+    name: NeuralQuantumStates.jl
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write        # so julia-actions/cache can evict its own caches
+      contents: write       # to push to gh-pages
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Install dependencies
+        shell: julia --color=yes --project=docs {0}
+        run: |
+          using Pkg
+          # `Pkg.instantiate` alone: the `[sources]` entries resolve the path dependencies.
+          # `Pkg.develop` would silently move `[weakdeps]` into `[deps]` and break extensions.
+          Pkg.instantiate()
+      - name: Build and deploy
+        run: julia --color=yes --project=docs docs/make.jl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+      - name: Doctests
+        run: |
+          julia --color=yes --project=docs -e '
+            using Documenter: DocMeta, doctest
+            using NeuralQuantumStates
+            DocMeta.setdocmeta!(NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true)
+            doctest(NeuralQuantumStates)'
+
+  latticespacegroups:
+    name: LatticeSpaceGroups.jl
+    # Serialised behind the umbrella so only one job pushes to gh-pages at a time.
+    needs: umbrella
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v2
+      - name: Install dependencies
+        shell: julia --color=yes --project=lib/LatticeSpaceGroups/docs {0}
+        run: |
+          using Pkg
+          Pkg.instantiate()
+      - name: Build and deploy
+        run: julia --color=yes --project=lib/LatticeSpaceGroups/docs lib/LatticeSpaceGroups/docs/make.jl
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
