@@ -1,7 +1,6 @@
 using Documenter
 
 using ConnectedConfigs
-using LatticeSpaceGroups
 using NQSAnsatze
 using NQSCore
 using NQSOptimisers
@@ -12,13 +11,12 @@ DocMeta.setdocmeta!(
     NeuralQuantumStates, :DocTestSetup, :(using NeuralQuantumStates); recursive=true
 )
 
-# One site for the whole ecosystem. Each `lib/` package used to carry its own Documenter
-# environment whose output was never deployed and which no CI job built, so a renamed export
-# could break it silently. Listing every module here instead means `checkdocs` covers all of
-# them in the build that actually runs.
+# One site for the ecosystem, minus LatticeSpaceGroups. That package is registered separately
+# and carries its own site under `LatticeSpaceGroups/` on the same `gh-pages` branch; the rest
+# are internal and documented here. Listing every module means `checkdocs` covers them all in
+# the build that actually runs.
 const ECOSYSTEM = [
     NeuralQuantumStates,
-    LatticeSpaceGroups,
     ConnectedConfigs,
     NQSCore,
     NQSAnsatze,
@@ -28,7 +26,6 @@ const ECOSYSTEM = [
 
 const REFERENCE_PAGES = [
     "Public API" => "lib/public.md",
-    "LatticeSpaceGroups" => "lib/latticespacegroups.md",
     "ConnectedConfigs" => "lib/connectedconfigs.md",
     "NQSCore" => "lib/nqscore.md",
     "NQSAnsatze" => "lib/nqsansatze.md",
@@ -54,8 +51,6 @@ makedocs(;
         "Home" => "index.md",
         "Basics" => "basics.md",
         "Manual" => Any[
-            "Lattices"=>"manual/lattices.md",
-            "Symmetries"=>"manual/symmetries.md",
             "Connected configurations"=>"manual/connectedconfigs.md",
             "Variational states"=>"manual/nqscore.md",
             "Ansätze"=>"manual/nqsansatze.md",
