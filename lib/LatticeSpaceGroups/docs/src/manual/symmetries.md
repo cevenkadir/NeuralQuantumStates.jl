@@ -14,12 +14,13 @@ using LatticeSpaceGroups
 
 ## Site indexing
 
-Everything here is expressed in terms of graph vertex numbers. [`site_positions`](@ref) and
+Everything here is expressed in terms of site numbers. Sites are numbered with the sublattice
+index varying fastest, then the first cell coordinate, and so on; [`site_positions`](@ref) and
 [`site_labels`](@ref) give the Cartesian positions and the lattice labels in that order, and it
 is the same order a Hilbert space built on the lattice will use for its degrees of freedom.
 
 ```@example sym
-lat = build(Hypercube([4], 1.0; periodic=[true]))
+lat = build(Hypercube([4]; periodic=true))
 site_positions(lat)
 ```
 
@@ -37,7 +38,7 @@ you hand to a symmetry group, which derives the cyclic group from the single gen
 direction admits no translation symmetry and is skipped:
 
 ```@example sym
-open_lat = build(Hypercube([4], 1.0; periodic=[false]))
+open_lat = build(Hypercube([4]; periodic=false))
 translation_generators(open_lat)
 ```
 
@@ -49,7 +50,7 @@ maps a Bravais lattice onto itself exactly when it is an integer matrix in the b
 primitive vectors that preserves the metric tensor.
 
 ```@example sym
-square = build(Hypercube([4, 4], 1.0; periodic=true))
+square = build(Square(4; periodic=true))
 length(point_group(square))    # D4
 ```
 
@@ -72,14 +73,21 @@ honeycomb = build(Honeycomb([3, 3], 1.0; periodic=true))
 length(point_group(honeycomb))    # D6, about the hexagon centre
 ```
 
+The same machinery works in three dimensions, where the multi-site bases are what make the
+compensating translation indispensable:
+
+```@example sym
+length(point_group(build(Pyrochlore([2, 2, 2], 1.0; periodic=true))))    # O_h
+```
+
 [`space_group`](@ref) combines the point group with the translation group, returning each
 distinct site permutation once.
 
 ## Checking an operation
 
 [`is_symmetry`](@ref) tests an operation without throwing, and by default requires that the
-lattice's **edge set** be preserved as well as its site set. That distinction is not pedantic: a
-lattice built with custom edges, or one with mixed boundary conditions, can admit an operation
+lattice's **bond set** be preserved as well as its site set. That distinction is not pedantic: a
+lattice built with explicit bonds, or one with mixed boundary conditions, can admit an operation
 that permutes sites correctly while mapping a bond onto a non-bond, and such an operation is not
 a symmetry of any Hamiltonian defined on those bonds.
 
@@ -97,7 +105,7 @@ hand-written permutation:
 ```julia
 using LatticeSpaceGroups, SymBasis
 
-lat  = build(Hypercube([8], 1.0; periodic=[true]))
+lat  = build(Hypercube([8]; periodic=true))
 dofo = dof_object(Spin(1 // 2))
 
 # Momentum-zero sector of an 8-site spin-1/2 chain.
