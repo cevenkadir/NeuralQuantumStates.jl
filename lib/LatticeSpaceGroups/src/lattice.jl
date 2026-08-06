@@ -8,7 +8,20 @@ const TOL_DIGITS = 12
 # Absolute tolerance below which a distance counts as zero.
 const DIST_TOL = 1.0e-12
 
+"""
+    AbstractLatticeBasis{T<:Real,D,O}
+
+Supertype of unit cells: `O` sites in `D` dimensions with coordinates of type `T`.
+The concrete implementation is [`LatticeBasis`](@ref).
+"""
 abstract type AbstractLatticeBasis{T<:Real,D,O} end
+
+"""
+    AbstractLattice{T<:Real,D,O}
+
+Supertype of lattices: a finite `D`-dimensional arrangement of cells carrying `O` sites each,
+with coordinates of type `T`. The concrete implementation is [`Lattice`](@ref).
+"""
 abstract type AbstractLattice{T<:Real,D,O} end
 
 # ============================================================================ lattice basis

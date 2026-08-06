@@ -60,6 +60,12 @@ import Pkg; Pkg.add(url="https://github.com/cevenkadir/NeuralQuantumStates.jl")
 See [Basics](@ref) for a worked example that builds a lattice, a Hilbert space, and a
 Hamiltonian, and then inspects its connected basis configurations.
 
+The manual goes deeper on individual pieces:
+
+- [Lattices](@ref) — the predefined lattice zoo, bonds and neighbour shells, and building one
+  by hand
+- [Symmetries](@ref) — translations, point groups, space groups, and the bridge to SymBasis.jl
+
 ## Bug reports and feature requests
 
 Please open an [issue](https://github.com/cevenkadir/NeuralQuantumStates.jl/issues/new).

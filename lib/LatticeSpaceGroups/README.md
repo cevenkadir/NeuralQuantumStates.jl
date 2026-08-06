@@ -12,6 +12,13 @@ from the lattice geometry, so a kagome torus is no harder than a chain.
 
 Its only dependency is StaticArrays.
 
+## Documentation
+
+This package is documented alongside the rest of its ecosystem:
+[Lattices](https://cevenkadir.github.io/NeuralQuantumStates.jl/dev/manual/lattices/),
+[Symmetries](https://cevenkadir.github.io/NeuralQuantumStates.jl/dev/manual/symmetries/), and the
+[API reference](https://cevenkadir.github.io/NeuralQuantumStates.jl/dev/lib/latticespacegroups/).
+
 ## Installation
 
 ```julia

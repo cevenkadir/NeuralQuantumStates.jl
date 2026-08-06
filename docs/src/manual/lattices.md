@@ -4,15 +4,46 @@ CurrentModule = LatticeSpaceGroups
 
 # Lattices
 
+Lattices come from `LatticeSpaceGroups`, which the umbrella re-exports — so everything on this
+page is available from `using NeuralQuantumStates`. The package also stands alone, depending on
+StaticArrays and nothing else, for anyone who wants lattice geometry without the
+neural-network stack.
+
 ```@example lattices
 using LatticeSpaceGroups
 ```
+
+## Why not just a graph?
+
+A graph gives you vertices and edges. A quantum lattice needs more:
+
+- **Positions and a Bravais basis**, so that "next-nearest neighbour" means something.
+- **A periodic-boundary-aware metric**, so neighbour orders are well defined on a torus rather
+  than being cut by the boundary.
+- **Space groups**, which are the whole point: `SymBasis.Translational`,
+  `SymBasis.SpatialReflection`, and `SymBasis.Rotational` each need a site permutation, and
+  writing one by hand only ever works for a one-dimensional chain. See [Symmetries](@ref).
+
+A [`Lattice`](@ref) is a plain struct holding its sites and bonds, so none of this costs a graph
+dependency. If you *want* a graph, see [Converting to a graph](@ref) below.
+
+## Predefined lattices
 
 A lattice is described by a **spec**, and [`build`](@ref) turns a spec into a
 [`Lattice`](@ref). Specs validate on construction, so a mistake is caught where you wrote it
 rather than deep inside the build.
 
-## Predefined lattices
+| Spec | Dim | Sites/cell | Coordination |
+|---|---|---|---|
+| [`Hypercube`](@ref), and [`Square`](@ref) / [`Cube`](@ref) | any | 1 | `2D` |
+| [`Triclinic`](@ref) | 3 | 1 | 6 |
+| [`Triangular`](@ref) | 2 | 1 | 6 |
+| [`Honeycomb`](@ref) | 2 | 2 | 3 |
+| [`Kagome`](@ref) | 2 | 3 | 4 |
+| [`BCC`](@ref) | 3 | 1 | 8 |
+| [`FCC`](@ref) | 3 | 1 | 12 |
+| [`Diamond`](@ref) | 3 | 2 | 4 |
+| [`Pyrochlore`](@ref) | 3 | 4 | 6 |
 
 ### Hypercubic, and its named cases
 

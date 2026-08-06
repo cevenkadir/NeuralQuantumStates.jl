@@ -1,5 +1,6 @@
 using Documenter
 
+using LatticeSpaceGroups
 using NeuralQuantumStates
 
 DocMeta.setdocmeta!(
@@ -7,7 +8,7 @@ DocMeta.setdocmeta!(
 )
 
 makedocs(;
-    modules=[NeuralQuantumStates],
+    modules=[NeuralQuantumStates, LatticeSpaceGroups],
     authors="Kadir Çeven",
     repo=Remotes.GitHub("cevenkadir", "NeuralQuantumStates.jl"),
     sitename="NeuralQuantumStates.jl",
@@ -18,13 +19,18 @@ makedocs(;
         # The ansatz and operator pages carry a fair amount of LaTeX.
         mathengine=Documenter.MathJax3(),
         # The API reference is one big `@autodocs` dump; it is expected to be large.
-        size_threshold_ignore=["lib/public.md"],
+        size_threshold_ignore=["lib/public.md", "lib/latticespacegroups.md"],
     ),
     pages=[
         "Home" => "index.md",
         "Basics" => "basics.md",
+        "Manual" => Any[
+            "Lattices"=>"manual/lattices.md",
+            "Symmetries"=>"manual/symmetries.md",
+        ],
         "Reference" => Any[
             "Public API"=>"lib/public.md",
+            "LatticeSpaceGroups"=>"lib/latticespacegroups.md",
         ],
     ],
     # The split is in progress: fail the build on a broken cross-reference rather than
