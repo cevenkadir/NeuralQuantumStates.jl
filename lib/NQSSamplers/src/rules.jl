@@ -88,9 +88,20 @@ The price is that the proposal is **asymmetric** — `s` may have a different nu
 connections than `s'` — so the correction `log[n_conn(s) / n_conn(s')]` is non-zero and must be
 carried into the acceptance test. Dropping it silently biases the sampled distribution, which
 is exactly the kind of error that produces plausible-looking but wrong expectation values.
+
+The operator is compiled once, when the rule is constructed. Every Metropolis step queries it
+twice — forwards and backwards — so leaving that work in the step is the difference between
+flattening the Hamiltonian a handful of times and flattening it a few million.
 """
 struct HamiltonianRule{O} <: AbstractRule
     operator::O
+
+    HamiltonianRule{O}(operator::O) where {O} = new{O}(operator)
+end
+
+function HamiltonianRule(operator)
+    compiled = ConnectedConfigs.compile(operator)
+    return HamiltonianRule{typeof(compiled)}(compiled)
 end
 
 function propose(rule::HamiltonianRule, s, dof, nsites::Integer, rng::AbstractRNG)
