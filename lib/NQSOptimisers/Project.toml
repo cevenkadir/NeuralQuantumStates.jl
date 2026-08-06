@@ -1,0 +1,42 @@
+name = "NQSOptimisers"
+uuid = "e6f1cb06-4e28-4e31-bf31-96dd4dd6e02d"
+authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
+version = "0.1.0-DEV"
+
+[deps]
+KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
+
+# BatchSolve.jl attaches at the AbstractLinearSolver seam. It is deliberately NOT a hard
+# dependency: whether its batched cuBLAS solve beats a plain CG/pinv baseline on a real S
+# matrix is an open question that has to be benchmarked before it is committed to.
+# The UUID is a placeholder until the package is registered; verify before enabling.
+# [weakdeps]
+# BatchSolve = "00000000-0000-0000-0000-000000000000"
+#
+# [extensions]
+# NQSOptimisersBatchSolveExt = "BatchSolve"
+
+[sources]
+ConnectedConfigs = {path = "../ConnectedConfigs"}
+NQSCore = {path = "../NQSCore"}
+
+[compat]
+KrylovKit = "0.8, 0.9"
+NQSCore = "0.1"
+Optimisers = "0.4.6"
+julia = "1.11"
+
+[extras]
+ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["ConnectedConfigs", "DifferentiationInterface", "ForwardDiff", "OperatorAlgebra", "Random", "SymBasis", "Test"]
