@@ -1,0 +1,45 @@
+name = "NQSAnsatze"
+uuid = "0fa8ea8c-8554-40bd-8978-b36539e7137d"
+version = "0.1.0-DEV"
+authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
+
+[deps]
+ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+# LatticeSpaceGroups stays WEAK: symmetric ansaetze accept raw permutations, and the lattice
+# package only adds a convenience constructor. Pkg.develop/Pkg.add will silently move it into
+# [deps] -- put it back here if that happens.
+[weakdeps]
+LatticeSpaceGroups = "b58f0687-8695-4e57-9eeb-fda788602521"
+
+[extensions]
+NQSAnsatzeLatticeSpaceGroupsExt = "LatticeSpaceGroups"
+
+[sources]
+ConnectedConfigs = {path = "../ConnectedConfigs"}
+LatticeSpaceGroups = {path = "../LatticeSpaceGroups"}
+NQSCore = {path = "../NQSCore"}
+
+[compat]
+ConnectedConfigs = "0.1"
+LatticeSpaceGroups = "0.1"
+Lux = "1.16"
+NQSCore = "0.1"
+julia = "1.11"
+
+[extras]
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+LatticeSpaceGroups = "b58f0687-8695-4e57-9eeb-fda788602521"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[targets]
+test = ["DifferentiationInterface", "LatticeSpaceGroups", "OperatorAlgebra", "SymBasis", "Test", "Zygote"]
