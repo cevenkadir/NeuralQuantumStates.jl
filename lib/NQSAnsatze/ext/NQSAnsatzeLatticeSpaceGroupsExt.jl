@@ -31,7 +31,7 @@ An RBM invariant under a symmetry group of `lattice`.
 
 # Example
 ```julia
-lat = build(Hypercube([4, 4], 1.0; periodic=true))
+lat = build(Square(4; periodic=true))
 model = SymmetricRBM(lat, 2)
 ```
 """

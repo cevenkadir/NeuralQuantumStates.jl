@@ -8,7 +8,7 @@ degrees of freedom, and its couplings — without building anything. Pass one to
 `build` to get a [`Model`](@ref):
 
 ```julia
-lat = build(Hypercube([8], 1.0; periodic=[true]))
+lat = build(Hypercube([8]; periodic=true))
 model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0))
 ```
 
@@ -88,7 +88,7 @@ function build(spec::TransverseFieldIsing)
     dof = Spin(1 // 2)
     ops = local_operators(dof)
     σz, σx = 2 .* ops.sz, 2 .* ops.sx
-    nsites = nv(spec.lattice)
+    nsites = n_sites(spec.lattice)
 
     terms = AbstractOp[]
     for (i, j) in bonds(spec.lattice)
@@ -137,7 +137,7 @@ function build(spec::ExtendedBoseHubbard)
     ops = local_operators(dof)
     a, adag, n = ops.a, ops.adag, ops.n
     nn = n * n - n                      # n(n-1), for the on-site interaction
-    nsites = nv(spec.lattice)
+    nsites = n_sites(spec.lattice)
 
     terms = AbstractOp[]
     for (i, j) in bonds(spec.lattice)

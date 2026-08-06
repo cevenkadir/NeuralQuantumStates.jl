@@ -33,7 +33,7 @@ diagonalization.
 |---|---|
 | [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases |
 | [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`, `OpChain`, `OpSum`, sparse/dense conversion, fermionic sites |
-| `LatticeSpaceGroups` | Lattice geometry, neighbour graphs, and the site permutations symmetry groups need |
+| `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need |
 | `ConnectedConfigs` | The batched local-energy kernel: connected configurations and their matrix elements |
 
 **Tier 2 — the neural-network stack.**

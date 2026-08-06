@@ -80,17 +80,17 @@ end
     end
 
     @testset "lattices" begin
-        lat = build(Hypercube([8], 1.0; periodic=[true]))
-        @test nv(lat) == 8
+        lat = build(Hypercube([8]; periodic=true))
+        @test n_sites(lat) == 8
         @test length(bonds(lat)) == 8                     # a ring has as many bonds as sites
-        @test length(bonds(build(Hypercube([8], 1.0; periodic=[false])))) == 7
-        @test nv(build(Kagome([2, 2], 1.0))) == 12
-        @test nv(build(Honeycomb([2, 2], 1.0))) == 8
+        @test length(bonds(build(Hypercube([8]; periodic=false)))) == 7
+        @test n_sites(build(Kagome([2, 2], 1.0))) == 12
+        @test n_sites(build(Honeycomb([2, 2], 1.0))) == 8
     end
 
     @testset "models reproduce the pre-split implementation" begin
         @testset "transverse-field Ising" begin
-            lat = build(Hypercube([8], 1.0; periodic=[true]))
+            lat = build(Hypercube([8]; periodic=true))
             model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0, h_z=1.0))
 
             @test model.nsites == 8
@@ -102,7 +102,7 @@ end
         end
 
         @testset "extended Bose-Hubbard" begin
-            lat = build(Hypercube([16], 1.0; periodic=[true]))
+            lat = build(Hypercube([16]; periodic=true))
             model = build(ExtendedBoseHubbard(lat, 5; J=1.0, U=1.0, V=1.0, μ=0.0))
 
             reference = reference_dict(bhm_single_configs, bhm_single_mels)
@@ -113,7 +113,7 @@ end
 
     @testset "models are Hermitian with sensible spectra" begin
         @testset "Ising" begin
-            lat = build(Hypercube([6], 1.0; periodic=[true]))
+            lat = build(Hypercube([6]; periodic=true))
             H = dense(build(TransverseFieldIsing(lat; J=1.0, h_x=0.5, h_z=0.2)))
             @test H ≈ H'
             # Every diagonal Ising energy lies within the bounds set by the couplings.
@@ -121,7 +121,7 @@ end
         end
 
         @testset "Bose-Hubbard conserves particle number" begin
-            lat = build(Hypercube([4], 1.0; periodic=[true]))
+            lat = build(Hypercube([4]; periodic=true))
             model = build(ExtendedBoseHubbard(lat, 2; J=1.0, U=1.0, V=0.5, μ=0.0))
             states = basis(model).states
             res = connected_padded(model.hamiltonian, states)
@@ -140,7 +140,7 @@ end
         # SymBasis builds the sector, and the reduced kernel gives a block whose eigenvalues
         # are part of the full spectrum.
         nsites = 6
-        lat = build(Hypercube([nsites], 1.0; periodic=[true]))
+        lat = build(Hypercube([nsites]; periodic=true))
         model = build(TransverseFieldIsing(lat; J=1.0, h_x=0.7, h_z=0.0))
         dofo = dof_object(model.dof)
 
@@ -201,7 +201,7 @@ end
 
     @testset "an exact ansatz reproduces exact diagonalization" begin
         nsites = 6
-        lat = build(Hypercube([nsites], 1.0; periodic=[true]))
+        lat = build(Hypercube([nsites]; periodic=true))
         model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0))
         E_exact = exact_ground_energy(model)
 
@@ -223,7 +223,7 @@ end
 
     @testset "a compressed RBM at N=10" begin
         nsites = 10
-        lat = build(Hypercube([nsites], 1.0; periodic=[true]))
+        lat = build(Hypercube([nsites]; periodic=true))
         model = build(TransverseFieldIsing(lat; J=1.0, h_x=2.0))
         E_exact = exact_ground_energy(model)
         b = basis(model)
@@ -262,7 +262,7 @@ end
 
 @testset "driver callbacks" begin
     nsites = 6
-    lat = build(Hypercube([nsites], 1.0; periodic=[true]))
+    lat = build(Hypercube([nsites]; periodic=true))
     model = build(TransverseFieldIsing(lat; J=1.0, h_x=2.0))
     b = basis(model)
     a = LogStateVector(model.dof, nsites, b)

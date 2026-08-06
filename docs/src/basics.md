@@ -16,7 +16,7 @@ Lattices are described by a *specification* â€” a struct saying what you want â€
 `build` turns into a lattice. Here is a periodic chain of 8 sites:
 
 ```@example 1
-lat = build(Hypercube([8], 1.0; periodic=[true]))
+lat = build(Hypercube([8]; periodic=true))
 ```
 
 Its bonds are pairs of site indices, and those indices are what operators act on:
@@ -113,7 +113,7 @@ state, a Hamiltonian, a preconditioner, and an optimizer together.
 using DifferentiationInterface, ForwardDiff, Random
 
 nsites = 6
-lat6 = build(Hypercube([nsites], 1.0; periodic=[true]))
+lat6 = build(Hypercube([nsites]; periodic=true))
 model6 = build(TransverseFieldIsing(lat6; J=1.0, h_x=1.0))
 b6 = basis(model6)
 

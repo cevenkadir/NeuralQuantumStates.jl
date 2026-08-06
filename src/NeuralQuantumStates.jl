@@ -15,7 +15,7 @@ diagonalization:
 |---|---|
 | [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases |
 | [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | `Op`/`OpChain`/`OpSum`, sparse and dense conversion, fermionic sites |
-| `LatticeSpaceGroups` | Lattice geometry, neighbour graphs, and the site permutations symmetry groups need |
+| `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need |
 | `ConnectedConfigs` | The batched local-energy kernel |
 
 | Package | Role |
@@ -36,7 +36,7 @@ it acts on.
 ```julia
 using NeuralQuantumStates
 
-lat = build(Hypercube([8], 1.0; periodic=[true]))
+lat = build(Hypercube([8]; periodic=true))
 model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0))
 
 states = basis(model).states
@@ -49,7 +49,7 @@ res = connected_padded(model.hamiltonian, states)
 
 | Was | Now |
 |---|---|
-| `Lattices.build(:Hypercube, [8], 1.0; periodic=[true])` | `build(Hypercube([8], 1.0; periodic=[true]))` |
+| `Lattices.build(:Hypercube, [8], 1.0; periodic=[true])` | `build(Hypercube([8]; periodic=true))` |
 | `Hilberts.build(:Spin, 1//2, N)` | `basis(dof_object(Spin(1//2)), N)` |
 | `Hilberts.build(:Fock, n_max, N; ∑n=n)` | `basis(dofo, N, sym(TotalBosonicNumber(n, N), dofo))` |
 | `Operators.build(:TransverseFieldIsing, h, l; ...)` | `build(TransverseFieldIsing(l; ...))` |

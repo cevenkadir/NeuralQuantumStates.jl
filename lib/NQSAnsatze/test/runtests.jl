@@ -177,7 +177,7 @@ end
 
     @testset "SymmetricRBM from a lattice" begin
         # The extension: permutations derived from geometry rather than written by hand.
-        lat = build(Hypercube([6], 1.0; periodic=[true]))
+        lat = build(Hypercube([6]; periodic=true))
         layer = SymmetricRBM(lat, 2)
         @test length(layer.permutations) == 6           # one per translation of the ring
 
