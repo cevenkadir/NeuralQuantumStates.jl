@@ -41,6 +41,38 @@ jobs:
       - uses: codecov/codecov-action@v3
         with:
           files: lcov.info
+  libs:
+    # The umbrella's own test run exercises the lib/* packages only through it, so their
+    # dependency-weight assertions -- the single property the whole package split exists to
+    # buy -- would otherwise run nowhere. Each is tested in its own environment, which is also
+    # the environment a registered package is resolved in.
+    name: lib/${{ matrix.package }} - Julia ${{ matrix.version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - LatticeSpaceGroups
+          - ConnectedConfigs
+          - NQSCore
+          - NQSSamplers
+          - NQSAnsatze
+          - NQSOptimisers
+        version:
+          - '1.11'
+    steps:
+      - uses: actions/checkout@v3
+      - uses: julia-actions/setup-julia@v1
+        with:
+          version: ${{ matrix.version }}
+          arch: x64
+      - uses: julia-actions/cache@v1
+      - name: Test lib/${{ matrix.package }}
+        run: |
+          julia --startup-file=no --project=lib/${{ matrix.package }} -e '
+            using Pkg
+            Pkg.instantiate()
+            Pkg.test()'
   docs:
     name: Documentation
     runs-on: ubuntu-latest
