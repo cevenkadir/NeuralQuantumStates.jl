@@ -1,33 +1,42 @@
-import Distances: evaluate
-
-using Distances: Metric
-using Graphs: Graph, nv as _nv
-using MetaGraphsNext: MetaGraph
-using NearestNeighbors: BallTree, inrange, knn
+using LinearAlgebra: det, norm
 using StaticArrays
 
-# define constants
+# Default neighbour order: nearest neighbours only.
 const ORDER = 1
+# Digits to round distances and fractional coordinates to when deciding whether two are equal.
 const TOL_DIGITS = 12
+# Absolute tolerance below which a distance counts as zero.
 const DIST_TOL = 1.0e-12
 
-# define abstract types
 abstract type AbstractLatticeBasis{T<:Real,D,O} end
-abstract type AbstractLattice{Tᵢ<:Integer,T<:Real,D,O} end
+abstract type AbstractLattice{T<:Real,D,O} end
+
+# ============================================================================ lattice basis
 
 """
     LatticeBasis{T<:Real,D,O} <: LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}
 
-A lattice basis for representing the unit cell of a `D`-dimensional lattice with `O` site
-    offsets.
+The unit cell of a `D`-dimensional lattice carrying `O` sites.
 
 # Fields
-- `vectors::SMatrix{D,D,T}`: A `D```\\times```D` square matrix for the primitive vectors
-    defining the unit cell. Each **column** is a primitive vector, so the position of the
-    site in cell ``(n_1, \\dots, n_D)`` is ``\\sum_i \\mathrm{vectors}[:, i] (n_i - 1)``
-    plus its site offset.
-- `site_offsets::SMatrix{D,O,T}`: A `D```\\times```O` matrix for the site offsets of the
-    lattice basis in the unit cell. Each column is one site offset.
+- `vectors::SMatrix{D,D,T}`: The primitive vectors, one per **column**. The cell at integer
+    coordinates ``(n_1, \\dots, n_D)`` sits at ``\\sum_i \\mathrm{vectors}[:, i] \\, (n_i - 1)``.
+- `site_offsets::SMatrix{D,O,T}`: Positions of the `O` sites within the cell, one per column.
+
+# Constructors
+    LatticeBasis(vectors)                        # one site at the cell origin
+    LatticeBasis(vectors, site_offset::Vector)   # one site at a given offset
+    LatticeBasis(vectors, site_offsets::Matrix)  # O sites, one per column
+
+`vectors` may be a `D`×`D` matrix, a vector of `D` primitive vectors, or — in one dimension —
+a single real number. The primitive vectors must be linearly independent; a singular set does
+not define a lattice and is rejected.
+
+# Example
+```julia
+LatticeBasis([1.0 0.5; 0.0 sqrt(0.75)])           # triangular Bravais cell
+LatticeBasis(1.0, [0.0, 0.5])                     # 1-D cell with a two-site basis
+```
 """
 struct LatticeBasis{T<:Real,D,O} <: AbstractLatticeBasis{T,D,O}
     vectors::SMatrix{D,D,T}
@@ -36,158 +45,33 @@ struct LatticeBasis{T<:Real,D,O} <: AbstractLatticeBasis{T,D,O}
     function LatticeBasis{T,D,O}(
         vectors::AbstractMatrix, site_offsets::AbstractMatrix
     ) where {T<:Real,D,O}
-        D isa Integer || throw(ArgumentError("dimension must be an integer"))
-        O isa Integer || throw(ArgumentError("number of site offsets must be an integer"))
         D > 0 || throw(ArgumentError("dimension must be positive"))
-        O > 0 || throw(ArgumentError("number of site offsets must be positive"))
-
-        return new{T,D,O}(SMatrix{D,D,T}(vectors), SMatrix{D,O,T}(site_offsets))
+        O > 0 || throw(ArgumentError("a unit cell must contain at least one site"))
+        v = SMatrix{D,D,T}(vectors)
+        # A singular set of primitive vectors spans fewer than D dimensions, so it describes no
+        # D-dimensional lattice -- and `_site_key` could not invert it to get fractional
+        # coordinates. Rejecting it here beats a confusing failure later.
+        iszero(det(v)) && throw(ArgumentError("the primitive vectors must be independent"))
+        return new{T,D,O}(v, SMatrix{D,O,T}(site_offsets))
     end
 end
-"""
-    LatticeBasis(
-        vector::T, site_offsets::AbstractVector{T}
-    ) where {T<:Real} -> LatticeSpaceGroups.LatticeBasis{T,1,length(site_offsets)}
 
-Define a lattice basis for representing the unit cell of a 1D lattice with
-    `length(site_offsets)` site offsets.
-
-# Arguments
-- `vector::T`: A real number for a primitive vector defining the unit cell.
-- `site_offsets::AbstractVector{T}`: A vector for the site offsets of the lattice basis in
-    the unit cell.
-
-# Returns
-- `LatticeSpaceGroups.LatticeBasis{T,1,length(site_offsets)}`: The defined lattice
-    basis of a 1D lattice with `length(site_offsets)` site offsets.
-"""
-function LatticeBasis(vector::T, site_offsets::AbstractVector{T}) where {T<:Real}
-    site_offsets = unique(collect(site_offsets))
-
-    n_offsets = length(site_offsets)
-
-    vector = SMatrix{1,1,T}(vector)
-    site_offsets = SMatrix{1,n_offsets,T}(site_offsets)
-
-    return LatticeBasis{T,1,n_offsets}(vector, site_offsets)
+function LatticeBasis(vectors::AbstractMatrix{T}, site_offsets::AbstractMatrix{T}) where {T<:Real}
+    size(vectors, 1) == size(vectors, 2) ||
+        throw(ArgumentError("expected a square matrix of primitive vectors"))
+    D, O = size(vectors, 1), size(site_offsets, 2)
+    size(site_offsets, 1) == D || throw(ArgumentError(
+        "site offsets are $(size(site_offsets, 1))-dimensional but the cell is $D-dimensional"
+    ))
+    return LatticeBasis{T,D,O}(vectors, site_offsets)
 end
-"""
-    LatticeBasis(vector::T, site_offset::T=T(0.0)) where {T<:Real}
-        -> LatticeSpaceGroups.LatticeBasis{T,1,1}
-
-Define a `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a 1D
-    lattice with the given primitive `vector` and `site_offset`.
-
-# Arguments
-- `vector::T`: A real number for a primitive vector defining the unit cell.
-- `site_offset::T`: A real number for the site offset of the lattice basis in the unit cell.
-    Defaults to `T(0.0)`.
-
-# Returns
-- `LatticeSpaceGroups.LatticeBasis{T,1,1}`: The defined lattice basis of a 1D
-    lattice with the given primitive `vector` and `site_offset`.
-"""
-function LatticeBasis(vector::T, site_offset::T) where {T<:Real}
-    return LatticeBasis(vector, [site_offset])
-end
-LatticeBasis(vector::T) where {T<:Real} = LatticeBasis(vector, T(0.0))
-"""
-    LatticeBasis(
-        vectors::AbstractMatrix{T},
-        site_offset::AbstractVector{T}=zeros(T, size(vectors)[1])
-    ) where {T<:Real} -> LatticeSpaceGroups.LatticeBasis{T,size(vectors)[1],1}
-
-Define a `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a
-    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
-    `site_offset`.
-
-# Arguments
-- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the unit
-    cell. Each column of the matrix is a primitive vector.
-- `site_offset::AbstractVector{T}`: A vector for one site offset of the lattice basis in the
-    unit cell. Defaults to `zeros(T, size(vectors)[1])`.
-
-# Returns
-- `LatticeSpaceGroups.LatticeBasis{T,size(vectors)[1],1}`: The defined
-    `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a
-    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
-    `site_offset`.
-"""
-function LatticeBasis(
-    vectors::AbstractMatrix{T}, site_offset::AbstractVector{T}
-) where {T<:Real}
-    vectors = unique(collect(vectors), dims=2)
-
-    n_dims, = size(vectors)
-
-    site_offset = SMatrix{n_dims,1,T}(site_offset)
-
-    return LatticeBasis{T,n_dims,1}(vectors, site_offset)
-end
-"""
-    LatticeBasis(
-        vectors::AbstractMatrix{T},
-        site_offsets::AbstractMatrix{T}=zeros(T, size(vectors)[1], 1)
-    ) where {T<:Real}
-        -> LatticeSpaceGroups.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}
-
-Define a `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a
-    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
-    `site_offsets`.
-
-# Arguments
-- `vectors::AbstractMatrix{T}`: A square matrix for the primitive vectors defining the unit
-    cell. Each column of the matrix is a primitive vector.
-- `site_offsets::AbstractMatrix{T}`: A matrix for the site offsets of the lattice basis in
-    the unit cell. Each column of the matrix is a site offset vector. Defaults to
-    `zeros(T, size(vectors, 1), 1)`.
-
-# Returns
-- `LatticeSpaceGroups.LatticeBasis{T,size(vectors)[1],size(site_offsets)[2]}`: The
-    defined `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a
-    `size(vectors, 1)`-dimensional lattice with the given primitive `vectors` and
-    `site_offsets`.
-"""
-function LatticeBasis(
-    vectors::AbstractMatrix{T}, site_offsets::AbstractMatrix{T}
-) where {T<:Real}
-    vectors = unique(collect(vectors), dims=2)
-    site_offsets = unique(collect(site_offsets), dims=2)
-
-    n_dims, = size(vectors)
-
-    n_offsets = size(site_offsets, 2)
-
-    return LatticeBasis{T,n_dims,n_offsets}(vectors, site_offsets)
+function LatticeBasis(vectors::AbstractMatrix{T}, site_offset::AbstractVector{T}) where {T<:Real}
+    return LatticeBasis(vectors, reshape(collect(site_offset), :, 1))
 end
 function LatticeBasis(vectors::AbstractMatrix{T}) where {T<:Real}
     return LatticeBasis(vectors, zeros(T, size(vectors, 1)))
 end
-"""
-    LatticeBasis(
-        vectors::AbstractVector{<:AbstractVector{T}},
-        site_offsets::AbstractVector{<:AbstractVector{T}}=[zeros(T, length(vectors[1]))]
-    ) where {T<:Real}
-        -> LatticeSpaceGroups.LatticeBasis{T,length(vectors[1]),length(site_offsets)}
 
-Define a `LatticeSpaceGroups.LatticeBasis` for representing the unit cell of a
-    `length(vectors[1])`-dimensional lattice with the given primitive `vectors` and
-    `site_offsets`.
-
-# Arguments
-- `vectors::AbstractVector{<:AbstractVector{T}}`: A vector of primitive vectors defining the
-    unit cell. Each element of the vector should be a primitive vector with the same
-    dimension.
-- `site_offsets::AbstractVector{<:AbstractVector{T}}`: A vector of site offsets of the
-    lattice basis in the unit cell. Each element of the vector should be a site offset
-    vector with the same dimension. Defaults to `[zeros(T, length(vectors[1]))]`.
-
-# Returns
-- `LatticeSpaceGroups.LatticeBasis{T,length(vectors[1]),length(site_offsets)}`:
-    The defined `LatticeSpaceGroups.LatticeBasis` for representing the unit cell
-    of a `length(vectors[1])`-dimensional lattice with the given primitive `vectors` and
-    `site_offsets`.
-"""
 function LatticeBasis(
     vectors::AbstractVector{<:AbstractVector{T}},
     site_offsets::AbstractVector{<:AbstractVector{T}}
@@ -198,515 +82,326 @@ function LatticeBasis(vectors::AbstractVector{<:AbstractVector{T}}) where {T<:Re
     return LatticeBasis(reduce(hcat, vectors))
 end
 
-function vertices(
-    shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,O}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    @assert D > 0 "dimension must be positive"
-    @assert O > 0 "number of site offsets must be positive"
-
-    n_vertices = Tᵢ(prod(shape) * O)
-
-    site_symbols = Symbol.('A':('A'+O-1))
-    site_offsets_dict = Dict(site_symbols[i] => basis.site_offsets[:, i] for i in 1:O)
-
-    labels_iter = Iterators.product(site_symbols, [1:i for i in shape]...)
-
-    _position = label -> site_offsets_dict[label[1]] .+
-                         sum(basis.vectors' .* (label[2:end] .- T(1.0)), dims=1)[1, :]
-
-    data_iter = Iterators.map(_position, labels_iter)
-
-    labels = SVector{n_vertices,eltype(labels_iter)}(collect(labels_iter)[:])
-    label_data = SVector{n_vertices,SVector{D,T}}(collect(data_iter)[:])
-
-    return labels, label_data
+function LatticeBasis(vector::T, site_offsets::AbstractVector{T}) where {T<:Real}
+    return LatticeBasis(fill(vector, 1, 1), reshape(collect(site_offsets), 1, :))
 end
-function vertices(
-    shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,1}
-) where {Tᵢ<:Integer,T<:Real,D}
-    @assert D > 0 "dimension must be positive"
+LatticeBasis(vector::T, site_offset::T) where {T<:Real} = LatticeBasis(vector, [site_offset])
+LatticeBasis(vector::T) where {T<:Real} = LatticeBasis(vector, [zero(T)])
 
-    n_vertices = prod(shape)
+# ============================================================================ site geometry
 
-    labels_iter = Iterators.product([1:i for i in shape]...)
+"""
+    _cell_ranges(shape) -> NTuple{D,UnitRange{Int}}
 
-    _position = label -> basis.site_offsets[:] .+
-                         sum(basis.vectors' .* (label .- T(1.0)), dims=1)[1, :]
+The cell coordinate ranges of a lattice, for iteration in site order.
+"""
+_cell_ranges(shape::SVector{D,Int}) where {D} = ntuple(d -> 1:shape[d], D)
 
-    data_iter = Iterators.map(_position, labels_iter)
+"""
+    _site_positions(shape, basis) -> Vector{SVector{D,T}}
 
-    labels = SVector{n_vertices,eltype(labels_iter)}(collect(labels_iter)[:])
-    label_data = SVector{n_vertices,SVector{D,T}}(collect(data_iter)[:])
+Cartesian positions of every site, in **site order**: the sublattice index varies fastest,
+then the first cell coordinate, then the second, and so on.
 
-    return labels, label_data
-end
-# function vertices(
-#     shape::SVector{1,Tᵢ}, basis::AbstractLatticeBasis{T,1,1}
-# ) where {Tᵢ<:Integer,T<:Real}
-#     n_vertices = prod(shape)
-
-#     labels_iter = 1:shape[1]
-
-#     _position = label -> basis.site_offsets[:] .+
-#                          sum(basis.vectors' .* (label .- T(1.0)), dims=1)[1, :]
-
-#     data_iter = Iterators.map(_position, labels_iter)
-
-#     labels = SVector{n_vertices,eltype(labels_iter)}(collect(labels_iter)[:])
-#     label_data = SVector{n_vertices,SVector{1,T}}(collect(data_iter)[:])
-
-#     return labels, label_data
-# end
-
-struct _LatticeMetric{Tᵢ<:Integer,T<:Real,D,O} <: Metric
-    shape::SVector{D,Tᵢ}
-    basis::AbstractLatticeBasis{T,D,O}
-    periodic::SVector{D,Bool}
-
-    function _LatticeMetric{Tᵢ,T,D,O}(
-        shape::AbstractVector, basis::AbstractLatticeBasis{T,D,O}, periodic::AbstractVector
-    ) where {Tᵢ<:Integer,T<:Real,D,O}
-        D > 0 || throw(ArgumentError("dimension must be positive"))
-        O > 0 || throw(ArgumentError("number of site offsets must be positive"))
-        all(shape .> 0) || throw(ArgumentError("shape must contain positive integers"))
-
-        return new{Tᵢ,T,D,O}(
-            SVector{D,Tᵢ}(shape), basis, SVector{D,Bool}(periodic)
-        )
-    end
-end
-function _LatticeMetric(
-    shape::AbstractVector{Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    periodic::AbstractVector{Bool}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    _LatticeMetric{Tᵢ,T,D,O}(shape, basis, periodic)
-end
-function evaluate(
-    dist::_LatticeMetric{Tᵢ,T,D,O}, a::AbstractVector{T}, b::AbstractVector{T}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    index_iter = Iterators.product([p ? (-1:1) : 0 for p in dist.periodic]...)
-
-    T_mat = Iterators.map(
-        x -> sum(dist.basis.vectors' .* dist.shape .* x, dims=1)[1, :],
-        index_iter
-    ) |> collect
-
-    rel_pos = a .- b
-
-    min_dist = sqrt(sum(rel_pos .^ 2))
-
-    while true
-        new_rel_pos = map(x -> x .+ rel_pos, T_mat)
-        new_dist = map(p -> sqrt(sum(p .^ 2)), new_rel_pos)
-        new_min_dist, min_index = findmin(new_dist)
-
-        if CartesianIndex(min_index) == CartesianIndex(fill(Tᵢ(2), count(dist.periodic))...)
-            min_dist = new_min_dist
-            break
-        else
-            rel_pos = new_rel_pos[min_index]
+That ordering is load-bearing. It is the indexing that [`site_permutation`](@ref) permutes and
+that a Hilbert space built on this lattice assigns its degrees of freedom to, so it must not
+drift.
+"""
+function _site_positions(
+    shape::SVector{D,Int}, basis::LatticeBasis{T,D,O}
+) where {T<:Real,D,O}
+    positions = Vector{SVector{D,T}}(undef, prod(shape) * O)
+    i = 0
+    for cell in Iterators.product(_cell_ranges(shape)...)
+        origin = basis.vectors * (SVector{D,T}(cell) .- one(T))
+        for o in 1:O
+            positions[i+=1] = origin + basis.site_offsets[:, o]
         end
     end
-
-    return min_dist
-end
-
-function _all_neighbor_dists(
-    tree::BallTree{SVector{D,T},D,T,_LatticeMetric{Tᵢ,T,D,O}}, max_order::Tᵢ=ORDER;
-    tol_digits::Tᵢ=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    i = 1
-    c = max_order
-
-    dists = SVector{max_order,T}[]
-
-    while true
-        dists = unique(
-            x -> round(x, digits=tol_digits),
-            knn(tree, tree.data[i], c, true, j -> j == i)[2]
-        )
-        dists = filter(x -> x != T(0.0), dists)
-
-        if length(dists) == max_order
-            break
-        else
-            c += 1
-        end
-    end
-
-    return SVector{max_order,T}(dists)
-end
-function _neighbor_dist(
-    tree::BallTree{SVector{D,T},D,T,_LatticeMetric{Tᵢ,T,D,O}}, order::Tᵢ=ORDER;
-    tol_digits::Tᵢ=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    dists = _all_neighbor_dists(tree, order; tol_digits=tol_digits)
-    dist = dists[order]
-
-    return dist
-end
-
-function _edges(
-    tree::BallTree{SVector{D,T},D,T,_LatticeMetric{Tᵢ,T,D,O}},
-    superindeces::SVector{Nᵥ,Tᵢ},
-    max_order::Tᵢ=ORDER;
-    tol_digits::Tᵢ=TOL_DIGITS,
-    dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O,Nᵥ}
-    @assert D > 0 "dimension must be positive"
-    @assert O > 0 "number of site offsets must be positive"
-    @assert max_order > 0 "`max_order` must be a positive integer"
-
-    S = length(superindeces)
-    @assert S > 0 "`superindeces` must have at least one element"
-
-    reordered_superindices = Vector{Tᵢ}(indexin(superindeces, tree.indices))
-
-    last_indeces = inrange(
-        tree,
-        tree.data[reordered_superindices],
-        _neighbor_dist(tree, 1; tol_digits=tol_digits) + dist_tol,
-        true
-    )
-    indeces = Tᵢ(1) .=> map((x, i) -> setdiff(x, i), last_indeces, superindeces)
-
-    if max_order > 1
-        for k in 1:(max_order-1)
-            new_indices = inrange(
-                tree,
-                tree.data[reordered_superindices],
-                _neighbor_dist(tree, k + 1; tol_digits=tol_digits) + dist_tol,
-                true
-            )
-
-            indeces = [indeces Tᵢ(k + 1) .=> map(
-                (x, y) -> setdiff(y, x),
-                last_indeces,
-                new_indices,
-            )]
-
-            last_indeces = new_indices
-        end
-    end
-
-    return SVector{S,Vector{Pair{Tᵢ,Vector{Tᵢ}}}}(eachrow(indeces))
-end
-function _edges(
-    tree::BallTree{SVector{D,T},D,T,_LatticeMetric{Tᵢ,T,D,O}},
-    superindex::Tᵢ,
-    max_order::Tᵢ=ORDER;
-    tol_digits::Tᵢ=TOL_DIGITS,
-    dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return _edges(
-        tree,
-        SVector{1,Tᵢ}([superindex]),
-        max_order;
-        tol_digits=tol_digits,
-        dist_tol=dist_tol
-    )
+    return positions
 end
 
 """
-    Lattice{Tᵢ<:Integer,T<:Real,D,O}
-        <: LatticeSpaceGroups.AbstractLattice{Tᵢ,T,D,O}
+    _supercell_images(shape, basis, periodic) -> Vector{SVector{D,T}}
 
-A `D`-dimensional `LatticeSpaceGroups.Lattice` of `shape` with given lattice
-    `basis` and `periodic` boundary conditions.
+Translations by whole supercells along the periodic directions, one per combination of
+``\\{-1, 0, +1\\}``. Adding each to a separation vector and taking the shortest result is the
+minimum-image convention, which is what makes "nearest neighbour" mean the right thing on a
+torus.
+"""
+function _supercell_images(
+    shape::SVector{D,Int}, basis::LatticeBasis{T,D,O}, periodic::SVector{D,Bool}
+) where {T<:Real,D,O}
+    ranges = ntuple(d -> periodic[d] ? (-1:1) : (0:0), D)
+    return [
+        basis.vectors * (SVector{D,T}(n) .* SVector{D,T}(shape))
+        for n in Iterators.product(ranges...)
+    ] |> vec
+end
+
+"""
+    _min_image_distance(Δ, images) -> T
+
+Shortest distance between two sites separated by `Δ`, minimized over supercell `images`.
+
+A single pass over the ``3^p`` images is not always enough for a strongly sheared supercell —
+shifting to the best image can expose a better one still — so the pass repeats until no image
+improves on the current best.
+"""
+function _min_image_distance(Δ::SVector{D,T}, images::Vector{SVector{D,T}}) where {T<:Real,D}
+    current = Δ
+    best = norm(current)
+    while true
+        improved = false
+        for t in images
+            candidate = current + t
+            d = norm(candidate)
+            # A plain `<` would let two tied images swap forever.
+            if d < best - eps(T) * max(one(T), best)
+                best, current, improved = d, candidate, true
+            end
+        end
+        improved || return best
+    end
+end
+
+"""
+    _neighbour_edges(positions, images, max_order; tol_digits, dist_tol)
+        -> (edges, orders)
+
+Edges of the lattice grouped into neighbour shells, out to `max_order`.
+
+Every pair of sites is measured under the minimum-image convention; the distinct distances are
+sorted, and the `max_order` smallest define the shells. `orders[k]` is the shell `edges[k]`
+belongs to, with `1` the nearest neighbours.
+
+This is `O(N²)` in the number of sites. For the lattices this package is for — exact
+diagonalization and variational Monte Carlo, so hundreds of sites, not millions — that is far
+cheaper than the spatial index it replaced, whose custom periodic metric had to be evaluated
+at every tree comparison anyway.
+"""
+function _neighbour_edges(
+    positions::Vector{SVector{D,T}}, images::Vector{SVector{D,T}}, max_order::Int;
+    tol_digits::Int=TOL_DIGITS, dist_tol::T=T(DIST_TOL)
+) where {T<:Real,D}
+    n = length(positions)
+    pairs = Tuple{Int,Int}[]
+    distances = T[]
+    for i in 1:(n-1), j in (i+1):n
+        push!(pairs, (i, j))
+        push!(distances, round(
+            _min_image_distance(positions[j] - positions[i], images); digits=tol_digits
+        ))
+    end
+
+    shells = sort!(unique(d for d in distances if d > dist_tol))
+    length(shells) >= max_order || throw(ArgumentError(
+        "this lattice has only $(length(shells)) distinct neighbour shell(s), " *
+        "but max_order = $max_order was requested"
+    ))
+    kept = shells[1:max_order]
+
+    edges = Tuple{Int,Int}[]
+    orders = Int[]
+    for (pair, d) in zip(pairs, distances)
+        shell = findfirst(==(d), kept)
+        shell === nothing && continue
+        push!(edges, pair)
+        push!(orders, shell)
+    end
+    return edges, orders
+end
+
+# ================================================================================== lattice
+
+"""
+    Lattice{T<:Real,D,O} <: LatticeSpaceGroups.AbstractLattice{T,D,O}
+
+A finite `D`-dimensional lattice: `shape` unit cells of `basis`, under `periodic` boundary
+conditions, with its sites and bonds enumerated.
+
+Sites are numbered in **site order** — sublattice fastest, then cell coordinate 1, 2, … — and
+that numbering is the lattice's interface to the rest of the ecosystem: it is what
+[`site_permutation`](@ref) permutes and what [`bonds`](@ref) reports pairs of.
 
 # Fields
-- `metagraph::MetaGraph{Tᵢ}`: A `MetaGraphsNext.MetaGraph` for the lattice to store its
-    vertices and edges.
-- `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
-    positive integers.
-- `basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}`: A lattice basis for
-    representing the unit cell of the lattice.
-- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
-    in each dimension.
+- `basis::LatticeBasis{T,D,O}`: The unit cell.
+- `shape::SVector{D,Int}`: Number of cells along each dimension.
+- `periodic::SVector{D,Bool}`: Boundary condition per dimension.
+- `positions::Vector{SVector{D,T}}`: Cartesian position of each site.
+- `edges::Vector{Tuple{Int,Int}}`: Bonds as site-index pairs, each listed once with `i < j`,
+    in lexicographic order.
+- `edge_orders::Vector{Int}`: Neighbour shell of each bond — `1` nearest, `2` next-nearest, …
+
+# Constructors
+    Lattice(shape, basis, periodic=false; max_order=1, tol_digits=12, dist_tol=1e-12)
+    Lattice(shape, basis, edges, periodic=false; orders=ones(Int, length(edges)))
+
+The first form derives bonds from distances, keeping every shell out to `max_order`. The
+second takes them literally as site-index pairs, for connectivity that is not distance-derived.
+
+`periodic` may be a single `Bool` applying to every dimension or one flag per dimension.
+
+Prefer [`build`](@ref) with one of the predefined specs — [`Hypercube`](@ref),
+[`Square`](@ref), [`Honeycomb`](@ref), … — over calling these directly.
 """
-struct Lattice{Tᵢ<:Integer,T<:Real,D,O} <: AbstractLattice{Tᵢ,T,D,O}
-    metagraph::MetaGraph{Tᵢ}
-    shape::SVector{D,Tᵢ}
-    basis::AbstractLatticeBasis{T,D,O}
+struct Lattice{T<:Real,D,O} <: AbstractLattice{T,D,O}
+    basis::LatticeBasis{T,D,O}
+    shape::SVector{D,Int}
     periodic::SVector{D,Bool}
+    positions::Vector{SVector{D,T}}
+    edges::Vector{Tuple{Int,Int}}
+    edge_orders::Vector{Int}
+end
 
-    function Lattice{Tᵢ,T,D,O}(
-        metagraph::MetaGraph{Tᵢ},
-        shape::AbstractVector,
-        basis::AbstractLatticeBasis{T,D,O},
-        periodic::AbstractVector
-    ) where {Tᵢ<:Integer,T<:Real,D,O}
-        D > 0 || throw(ArgumentError("dimension must be positive"))
-        O > 0 || throw(ArgumentError("number of site offsets must be positive"))
-        all(shape .> 0) || throw(ArgumentError("shape must contain positive integers"))
+"""
+    _as_boundary(periodic, shape) -> SVector{D,Bool}
 
-        return new{Tᵢ,T,D,O}(
-            metagraph, SVector{D,Tᵢ}(shape), basis, SVector{D,Bool}(periodic)
-        )
+Normalize a boundary-condition argument to one flag per dimension, rejecting a periodic
+dimension of extent 1 — wrapping it would make a site its own neighbour.
+"""
+function _as_boundary(periodic::AbstractVector, shape::SVector{D,Int}) where {D}
+    length(periodic) == D || throw(ArgumentError(
+        "periodic has $(length(periodic)) entries but the shape is $D-dimensional"
+    ))
+    p = SVector{D,Bool}(periodic)
+    bad = findall(p .& (shape .== 1))
+    isempty(bad) || throw(ArgumentError(
+        "periodic must be false where shape == 1 (offending dimension(s): $bad)"
+    ))
+    return p
+end
+_as_boundary(periodic::Bool, shape::SVector{D,Int}) where {D} =
+    _as_boundary(fill(periodic, D), shape)
+
+"""
+    _as_shape(shape) -> SVector{D,Int}
+
+Normalize and validate a lattice shape.
+"""
+function _as_shape(shape::AbstractVector{<:Integer})
+    D = length(shape)
+    D > 0 || throw(ArgumentError("shape must have at least one entry"))
+    all(shape .> 0) || throw(ArgumentError("shape must contain positive integers"))
+    return SVector{D,Int}(shape)
+end
+
+function Lattice(
+    shape::AbstractVector{<:Integer},
+    basis::LatticeBasis{T,D,O},
+    periodic::Union{Bool,AbstractVector}=false;
+    max_order::Integer=ORDER, tol_digits::Integer=TOL_DIGITS, dist_tol::Real=DIST_TOL
+) where {T<:Real,D,O}
+    s = _as_shape(shape)
+    length(s) == D || throw(ArgumentError(
+        "shape is $(length(s))-dimensional but the basis is $D-dimensional"
+    ))
+    max_order > 0 || throw(ArgumentError("max_order must be positive"))
+
+    p = _as_boundary(periodic, s)
+    positions = _site_positions(s, basis)
+    edges, orders = _neighbour_edges(
+        positions, _supercell_images(s, basis, p), Int(max_order);
+        tol_digits=Int(tol_digits), dist_tol=T(dist_tol)
+    )
+    return Lattice{T,D,O}(basis, s, p, positions, edges, orders)
+end
+
+function Lattice(
+    shape::AbstractVector{<:Integer},
+    basis::LatticeBasis{T,D,O},
+    edges::AbstractVector{<:Tuple{Integer,Integer}},
+    periodic::Union{Bool,AbstractVector}=false;
+    orders::AbstractVector{<:Integer}=fill(1, length(edges))
+) where {T<:Real,D,O}
+    s = _as_shape(shape)
+    length(s) == D || throw(ArgumentError(
+        "shape is $(length(s))-dimensional but the basis is $D-dimensional"
+    ))
+    length(orders) == length(edges) ||
+        throw(ArgumentError("got $(length(orders)) orders for $(length(edges)) edges"))
+
+    positions = _site_positions(s, basis)
+    n = length(positions)
+    normalized = map(edges) do (i, j)
+        (1 <= i <= n && 1 <= j <= n) ||
+            throw(ArgumentError("edge ($i, $j) refers to a site outside 1:$n"))
+        i == j && throw(ArgumentError("edge ($i, $j) connects a site to itself"))
+        (min(Int(i), Int(j)), max(Int(i), Int(j)))
     end
-end
-function Lattice(
-    metagraph::MetaGraph{Tᵢ},
-    shape::SVector{D,Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    periodic::SVector{D,Bool}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return Lattice{Tᵢ,T,D,O}(metagraph, shape, basis, periodic)
-end
-"""
-    Lattice(
-        shape::SVector{D,Tᵢ},
-        basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O},
-        periodic::SVector{D,Bool}=SVector{D,Bool}(fill(false, D));
-        max_order::Tᵢ=1,
-        tol_digits::Tᵢ=12,
-        dist_tol::T=1.0e-12
-    ) where {Tᵢ<:Integer,T<:Real,D,O} -> LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}
 
-Build a `D`-dimensional `LatticeSpaceGroups.Lattice` of `shape` by using the given
-    lattice `basis` and `periodic` boundary conditions.
-
-# Arguments
-- `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
-    positive integers.
-- `basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}`: A lattice basis for
-    representing the unit cell of the lattice.
-- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
-    in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
-
-# Keywords
-- `max_order::Tᵢ`: An integer for the maximum order of the edges to be included in the
-    lattice as `max_order`-nearest neighbors. Defaults to `1`, which means only nearest
-    neighbors are included. For example, if it is set to `2`, then nearest and next-nearest
-    neighbors are included.
-- `tol_digits::Tᵢ`: An integer for the number of digits to round the calculated distances
-    to. Defaults to `12`.
-- `dist_tol::T`: A positive number for the tolerance of the distance between two lattice
-    sites to be considered as the same site. Defaults to `1.0e-12`.
-
-# Returns
-- `LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
-    `LatticeSpaceGroups.Lattice` of `shape` by using the given lattice `basis` and
-    `periodic` boundary conditions.
-"""
-function Lattice(
-    shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,O}, periodic::SVector{D,Bool};
-    max_order::Tᵢ=ORDER, tol_digits::Tᵢ=TOL_DIGITS, dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    @assert max_order > 0 "order must be a positive integer"
-
-    ver_labels, ver_data = vertices(shape, basis)
-    n_vertices = length(ver_labels)
-
-    metric = _LatticeMetric(shape, basis, periodic)
-
-    tree = BallTree(Vector(ver_data), metric)
-
-    g = Graph(0)
-    mg = MetaGraph(
-        g;
-        label_type=eltype(ver_labels),
-        vertex_data_type=SVector{D,T},
-        edge_data_type=Tᵢ
-    )
-
-    foreach((l, d) -> setindex!(mg, d, l), ver_labels, ver_data)
-
-    foreach(
-        (lᵢ, e) -> foreach(
-            p -> foreach(jₛ -> setindex!(mg, p[1], lᵢ, ver_labels[jₛ]), p[2]),
-            e
-        ),
-        ver_labels,
-        _edges(
-            tree, SVector{n_vertices,Tᵢ}(1:n_vertices), max_order;
-            tol_digits=tol_digits, dist_tol=dist_tol
-        )
-    )
-
-    return Lattice(mg, shape, basis, periodic)
-end
-function Lattice(
-    shape::SVector{D,Tᵢ}, basis::AbstractLatticeBasis{T,D,O};
-    max_order::Tᵢ=ORDER, tol_digits::Tᵢ=TOL_DIGITS, dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return Lattice(
-        shape, basis, SVector{D,Bool}(fill(false, D));
-        max_order=max_order, tol_digits=tol_digits, dist_tol=dist_tol
+    # Sorting makes `bonds` independent of how the bonds were arrived at: the grid path and
+    # the distance search produce the same set in different sequences, and a lattice's bond
+    # list should not depend on which one built it.
+    permutation = sortperm(normalized)
+    return Lattice{T,D,O}(
+        basis, s, _as_boundary(periodic, s), positions,
+        collect(normalized)[permutation], collect(Int, orders)[permutation]
     )
 end
-"""
-    Lattice(
-        shape::AbstractVector{Tᵢ},
-        basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O},
-        periodic::AbstractVector{Bool}=fill(false, D);
-        max_order::Tᵢ=1,
-        tol_digits::Tᵢ=12,
-        dist_tol::T=1.0e-12
-    ) where {Tᵢ<:Integer,T<:Real,D,O} -> LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}
 
-Build a `D`-dimensional `LatticeSpaceGroups.Lattice` of `shape` by using the given
-    lattice `basis` and `periodic` boundary conditions.
-
-# Arguments
-- `shape::AbstractVector{Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
-    positive integers.
-- `basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}`: A lattice basis for
-    representing the unit cell of the lattice.
-- `periodic::AbstractVector{Bool}`: A vector for the periodic boundary condition of the
-    lattice in each dimension. Defaults to `fill(false, D)`.
-
-# Keywords
-- `max_order::Tᵢ`: An integer for the maximum order of the edges to be included in the
-    lattice as `max_order`-nearest neighbors. Defaults to `1`, which means only nearest
-    neighbors are included. For example, if it is set to `2`, then nearest and next-nearest
-    neighbors are included.
-- `tol_digits::Tᵢ`: An integer for the number of digits to round the calculated distances
-    to. Defaults to `12`.
-- `dist_tol::T`: A positive number for the tolerance of the distance between two lattice
-    sites to be considered as the same site. Defaults to `1.0e-12`.
-
-# Returns
-- `LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
-    `LatticeSpaceGroups.Lattice` of `shape` by using the given lattice `basis` and
-    `periodic` boundary conditions.
-"""
-function Lattice(
-    shape::AbstractVector{Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    periodic::AbstractVector{Bool};
-    max_order::Tᵢ=ORDER,
-    tol_digits::Tᵢ=TOL_DIGITS,
-    dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return Lattice(
-        SVector{length(shape),Tᵢ}(shape), basis, SVector{length(periodic),Bool}(periodic);
-        max_order=max_order, tol_digits=tol_digits, dist_tol=dist_tol
-    )
-end
-function Lattice(
-    shape::AbstractVector{Tᵢ}, basis::AbstractLatticeBasis{T,D,O};
-    max_order::Tᵢ=ORDER, tol_digits::Tᵢ=TOL_DIGITS, dist_tol::T=DIST_TOL
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return Lattice(
-        SVector{length(shape),Tᵢ}(shape), basis, SVector{D,Bool}(fill(false, D));
-        max_order=max_order, tol_digits=tol_digits, dist_tol=dist_tol
-    )
-end
-"""
-    Lattice(
-        shape::SVector{D,Tᵢ},
-        basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O},
-        custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
-        periodic::SVector{D,Bool}=SVector{D,Bool}(fill(false, D))
-    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}
-
-Build a `D`-dimensional `LatticeSpaceGroups.Lattice` of `shape` by using the given
-    lattice `basis`, `periodic` boundary conditions and `custom_edges`.
-
-# Arguments
-- `shape::SVector{D,Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
-    positive integers.
-- `basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}`: A lattice basis for
-    representing the unit cell of the lattice.
-- `custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}`: A tuple of two
-    vectors for the custom edges to be added to the lattice. The first vector contains the
-    lattice site labels of the edges to be added in the form of `NTuple{2,L}` where `L` is
-    the type of the lattice site labels. The second vector is of positive integers for
-    distingushing the edges to be added. These two vectors must have the same length.
-- `periodic::SVector{D,Bool}`: A vector for the periodic boundary condition of the lattice
-    in each dimension. Defaults to `SVector{D,Bool}(fill(false, D))`.
-
-# Returns
-- `LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
-    `LatticeSpaceGroups.Lattice` of `shape` by using the given lattice `basis`,
-    `periodic` boundary conditions and `custom_edges`.
-"""
-function Lattice(
-    shape::SVector{D,Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
-    periodic::SVector{D,Bool}
-) where {Tᵢ<:Integer,T<:Real,D,O,L}
-    @assert length(custom_edges[1]) ==
-            length(custom_edges[2]) "vectors in `custom_edges` must have the same length"
-
-    ver_labels, ver_data = vertices(shape, basis)
-
-    @assert eltype(ver_labels) == L "vertex label type must match"
-
-    g = Graph(0)
-    mg = MetaGraph(
-        g;
-        label_type=eltype(ver_labels),
-        vertex_data_type=SVector{D,T},
-        edge_data_type=Tᵢ
-    )
-
-    foreach((l, d) -> setindex!(mg, d, l), ver_labels, ver_data)
-
-    foreach((ll, c) -> setindex!(mg, c, ll...), custom_edges...)
-
-    return Lattice(mg, shape, basis, periodic)
-end
-function Lattice(
-    shape::SVector{D,Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}
-) where {Tᵢ<:Integer,T<:Real,D,O,L}
-    return Lattice(shape, basis, custom_edges, SVector{D,Bool}(fill(false, D)))
-end
-"""
-    Lattice(
-        shape::AbstractVector{Tᵢ},
-        basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O},
-        custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
-        periodic::SVector{Bool}=fill(false, D)
-    ) where {Tᵢ<:Integer,T<:Real,D,O,L} -> LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}
-
-Build a `D`-dimensional `LatticeSpaceGroups.Lattice` of `shape` by using the given
-    lattice `basis`, `periodic` boundary conditions and `custom_edges`.
-
-# Arguments
-- `shape::AbstractVector{Tᵢ}`: A vector for the shape of the lattice. It must contain `D`
-    positive integers.
-- `basis::LatticeSpaceGroups.AbstractLatticeBasis{T,D,O}`: A lattice basis for
-    representing the unit cell of the lattice.
-- `custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}`: A tuple of two
-    vectors for the custom edges to be added to the lattice. The first vector contains the
-    lattice site labels of the edges to be added in the form of `NTuple{2,L}` where `L` is
-    the type of the lattice site labels. The second vector is of positive integers for
-    distingushing the edges to be added. These two vectors must have the same length.
-- `periodic::AbstractVector{Bool}`: A vector for the periodic boundary condition of the
-    lattice in each dimension. Defaults to `fill(false, D)`.
-
-# Returns
-- `LatticeSpaceGroups.Lattice{Tᵢ,T,D,O}`: The built `D`-dimensional
-    `LatticeSpaceGroups.Lattice` of `shape` by using the given lattice `basis`,
-    `periodic` boundary conditions and `custom_edges`.
-"""
-function Lattice(
-    shape::AbstractVector{Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}},
-    periodic::AbstractVector{Bool}
-) where {Tᵢ<:Integer,T<:Real,D,O,L}
-    return Lattice(
-        SVector{length(shape),Tᵢ}(shape),
-        basis,
-        custom_edges,
-        SVector{length(periodic),Bool}(periodic)
-    )
-end
-function Lattice(
-    shape::AbstractVector{Tᵢ},
-    basis::AbstractLatticeBasis{T,D,O},
-    custom_edges::Tuple{AbstractVector{NTuple{2,L}},AbstractVector{Tᵢ}}
-) where {Tᵢ<:Integer,T<:Real,D,O,L}
-    return Lattice(shape, basis, custom_edges, fill(false, D))
+function Base.show(io::IO, lattice::Lattice{T,D,O}) where {T<:Real,D,O}
+    print(io, "Lattice{", T, ",", D, ",", O, "}(", Vector(lattice.shape),
+        "; periodic=", Vector(lattice.periodic), ", ",
+        n_sites(lattice), " sites, ", length(lattice.edges), " bonds)")
+    return nothing
 end
 
-function nv(lattice::Lattice{Tᵢ,T,D,O}) where {Tᵢ<:Integer,T<:Real,D,O}
-    return _nv(lattice.metagraph)
+# ================================================================================= accessors
+
+"""
+    n_sites(lattice) -> Int
+
+Number of sites in the lattice, `prod(shape) * O`.
+"""
+n_sites(lattice::Lattice) = length(lattice.positions)
+
+"""
+    site_positions(lattice) -> Vector{SVector{D,T}}
+
+Cartesian positions of the lattice sites, indexed by site number.
+"""
+site_positions(lattice::Lattice) = lattice.positions
+
+"""
+    site_labels(lattice) -> Vector{NTuple{D+1,Int}}
+
+Lattice site labels `(sublattice, n₁, …, n_D)`, indexed by site number and in the same order
+as [`site_positions`](@ref).
+
+The sublattice index runs `1:O` and the cell coordinates run `1:shape[d]`, so the label says
+where a site sits without reference to its Cartesian position.
+"""
+function site_labels(lattice::Lattice{T,D,O}) where {T<:Real,D,O}
+    labels = Vector{NTuple{D + 1,Int}}(undef, n_sites(lattice))
+    i = 0
+    for cell in Iterators.product(_cell_ranges(lattice.shape)...)
+        for o in 1:O
+            labels[i+=1] = (o, cell...)
+        end
+    end
+    return labels
+end
+
+"""
+    bonds(lattice; order=nothing) -> Vector{Tuple{Int,Int}}
+
+The lattice's bonds as pairs of site indices, each listed once with `i < j`, in lexicographic
+order.
+
+Site indices are the numbering of [`site_positions`](@ref), so a bond can be used directly as
+the site identifiers of an operator term.
+
+`order` selects a neighbour shell: `1` for nearest neighbours, `2` for next-nearest, and so on,
+matching the `max_order` the lattice was built with. The default, `nothing`, returns every bond.
+
+# Example
+```julia
+lat = build(Hypercube([4]; periodic=true))
+bonds(lat)    # [(1,2), (1,4), (2,3), (3,4)]
+```
+"""
+function bonds(lattice::Lattice; order::Union{Nothing,Integer}=nothing)
+    order === nothing && return copy(lattice.edges)
+    return [e for (e, o) in zip(lattice.edges, lattice.edge_orders) if o == order]
 end

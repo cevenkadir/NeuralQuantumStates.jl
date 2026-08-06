@@ -1,6 +1,4 @@
-using Graphs: edges as _edges_of, src as _src, dst as _dst
-using LinearAlgebra: det
-using MetaGraphsNext: code_for, label_for, labels
+using LinearAlgebra: Diagonal, det
 using StaticArrays
 
 """
@@ -77,69 +75,29 @@ The orthogonal part of a space-group operation, discarding its translation.
 """
 point_part(op::SpaceOperation{D,T}) where {D,T} = PointOperation{D,T}(op.matrix)
 
-# ---------------------------------------------------------------------------- site geometry
-
 """
-    site_positions(lattice) -> Vector{SVector{D,T}}
+    apply(operation, position, lattice) -> SVector
 
-Cartesian positions of the lattice sites, indexed by graph vertex number.
-
-The ordering matters: it is the indexing that [`site_permutation`](@ref) permutes, and the
-same one a Hilbert space built on this lattice will use for its degrees of freedom.
+Image of a Cartesian `position` under `operation`. Point operations act about the Cartesian
+origin.
 """
-function site_positions(lattice::Lattice{Tᵢ,T,D,O}) where {Tᵢ<:Integer,T<:Real,D,O}
-    mg = lattice.metagraph
-    positions = Vector{SVector{D,T}}(undef, _nv(mg))
-    for l in labels(mg)
-        positions[code_for(mg, l)] = mg[l]
-    end
-    return positions
+function apply(
+    op::Translation{D}, position::AbstractVector, lattice::Lattice{T,D,O}
+) where {T<:Real,D,O}
+    return SVector{D,T}(position) + lattice.basis.vectors * SVector{D,T}(op.displacement)
+end
+function apply(
+    op::PointOperation{D}, position::AbstractVector, lattice::Lattice{T,D,O}
+) where {T<:Real,D,O}
+    return SMatrix{D,D,T}(op.matrix) * SVector{D,T}(position)
+end
+function apply(
+    op::SpaceOperation{D}, position::AbstractVector, lattice::Lattice{T,D,O}
+) where {T<:Real,D,O}
+    return SMatrix{D,D,T}(op.matrix) * SVector{D,T}(position) + SVector{D,T}(op.offset)
 end
 
-"""
-    site_labels(lattice) -> Vector
-
-Lattice site labels, indexed by graph vertex number, in the same order as
-[`site_positions`](@ref).
-"""
-function site_labels(lattice::Lattice{Tᵢ,T,D,O}) where {Tᵢ<:Integer,T<:Real,D,O}
-    mg = lattice.metagraph
-    return [label_for(mg, v) for v in 1:_nv(mg)]
-end
-
-"""
-    bonds(lattice; order=nothing) -> Vector{Tuple{Int,Int}}
-
-The lattice's edges as pairs of site indices, each listed once with `i < j`.
-
-Site indices are graph vertex numbers, the same indexing as [`site_positions`](@ref) — so a
-bond can be used directly as the site identifiers of an operator term.
-
-`order` selects a neighbour shell: `1` for nearest neighbours, `2` for next-nearest, and so on,
-matching the `max_order` the lattice was built with. The default, `nothing`, returns every bond
-regardless of shell.
-
-# Example
-```julia
-lat = build(Hypercube([4], 1.0; periodic=[true]))
-bonds(lat)    # [(1,2), (2,3), (3,4), (1,4)]
-```
-"""
-function bonds(
-    lattice::Lattice{Tᵢ,T,D,O}; order::Union{Nothing,Integer}=nothing
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    mg = lattice.metagraph
-    out = Tuple{Int,Int}[]
-    for e in _edges_of(mg)
-        i, j = Int(_src(e)), Int(_dst(e))
-        if order !== nothing
-            # Edge data records which neighbour shell the bond belongs to.
-            mg[label_for(mg, i), label_for(mg, j)] == order || continue
-        end
-        push!(out, (min(i, j), max(i, j)))
-    end
-    return out
-end
+# ------------------------------------------------------------------------------ site lookup
 
 """
     _site_key(lattice, position; tol_digits) -> NTuple{D,Int}
@@ -158,37 +116,84 @@ bit, so the two never compare equal and a genuine symmetry gets rejected. Scalin
 first and folding with integer `mod` makes the two paths agree exactly.
 """
 function _site_key(
-    lattice::Lattice{Tᵢ,T,D,O}, position::AbstractVector; tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
+    lattice::Lattice{T,D,O}, position::AbstractVector; tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
     fractional = lattice.basis.vectors \ SVector{D,T}(position)
     scale = 10^tol_digits
-    key = ntuple(D) do d
+    return ntuple(D) do d
         n = round(Int, Float64(fractional[d]) * scale)
         lattice.periodic[d] ? mod(n, Int(lattice.shape[d]) * scale) : n
     end
-    return key
 end
 
 """
-    apply(operation, position, lattice) -> SVector
+    _SiteIndex
 
-Image of a Cartesian `position` under `operation`. Point operations act about the Cartesian
-origin.
+Everything the symmetry search needs to look a site up by position, built once and reused.
+
+Testing a candidate operation means mapping every site and finding what it landed on. Rebuilding
+this table per candidate — and the point-group search tries hundreds of candidates, each against
+every site as a possible translation target — dominated the cost of `point_group` and
+`space_group`. Hoisting it out turns that into a single construction per public call.
 """
-function apply(
-    op::Translation{D}, position::AbstractVector, lattice::Lattice{Tᵢ,T,D,O}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return SVector{D,T}(position) + lattice.basis.vectors * SVector{D,T}(op.displacement)
+struct _SiteIndex{D,T<:Real}
+    positions::Vector{SVector{D,T}}
+    lookup::Dict{NTuple{D,Int},Int}
+    edges::Set{Tuple{Int,Int}}
+    tol_digits::Int
 end
-function apply(
-    op::PointOperation{D}, position::AbstractVector, lattice::Lattice{Tᵢ,T,D,O}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return SMatrix{D,D,T}(op.matrix) * SVector{D,T}(position)
+
+function _site_index(
+    lattice::Lattice{T,D,O}; tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
+    positions = lattice.positions
+    lookup = Dict{NTuple{D,Int},Int}()
+    sizehint!(lookup, length(positions))
+    for (i, p) in enumerate(positions)
+        lookup[_site_key(lattice, p; tol_digits=tol_digits)] = i
+    end
+    return _SiteIndex{D,T}(positions, lookup, Set(lattice.edges), Int(tol_digits))
 end
-function apply(
-    op::SpaceOperation{D}, position::AbstractVector, lattice::Lattice{Tᵢ,T,D,O}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    return SMatrix{D,D,T}(op.matrix) * SVector{D,T}(position) + SVector{D,T}(op.offset)
+
+"""
+    _try_site_permutation(index, lattice, operation) -> Union{Vector{Int},Nothing}
+
+The site permutation induced by `operation`, or `nothing` if it is not a symmetry.
+
+Returning `nothing` rather than throwing is what lets the group searches use this in their
+inner loop: a candidate operation failing is the *expected* outcome there, not an error, and
+building an exception for each would cost more than the test itself.
+"""
+function _try_site_permutation(
+    index::_SiteIndex{D,T}, lattice::Lattice{T,D,O},
+    operation::AbstractSymmetryOperation{D}
+) where {T<:Real,D,O}
+    n = length(index.positions)
+    perm = Vector{Int}(undef, n)
+    taken = falses(n)
+    for i in 1:n
+        image = apply(operation, index.positions[i], lattice)
+        j = get(index.lookup, _site_key(lattice, image; tol_digits=index.tol_digits), 0)
+        # `taken` catches a non-injective map as soon as it happens, which is both cheaper
+        # than a trailing `isperm` and stops early on the common failure.
+        (j == 0 || taken[j]) && return nothing
+        taken[j] = true
+        perm[i] = j
+    end
+    return perm
+end
+
+"""
+    _preserves_edges(index, perm) -> Bool
+
+Whether the site permutation maps the lattice's bond set onto itself.
+"""
+function _preserves_edges(index::_SiteIndex, perm::AbstractVector{<:Integer})
+    for (i, j) in index.edges
+        a, b = perm[i], perm[j]
+        (min(a, b), max(a, b)) in index.edges || return false
+    end
+    return true
 end
 
 # ------------------------------------------------------------------------ site permutations
@@ -204,50 +209,48 @@ This is the bridge to SymBasis.jl: `SymBasis.Translational`, `SymBasis.SpatialRe
 
 Throws an `ArgumentError` if `operation` is not a symmetry of the lattice — that is, if it
 moves some site to a position where no site exists (after folding through the periodic
-boundary conditions), or if it maps two sites onto the same one. Use
-[`is_symmetry`](@ref) to test without throwing.
+boundary conditions), or if it maps two sites onto the same one. Use [`is_symmetry`](@ref) to
+test without throwing.
 
 # Example
 For a periodic chain, translating by one cell is the cyclic shift:
 ```julia
-lat = build(:Hypercube, [4], 1.0; periodic=[true])
+lat = build(Hypercube([4]; periodic=true))
 site_permutation(lat, Translation([1])) == [2, 3, 4, 1]
 ```
 """
 function site_permutation(
-    lattice::Lattice{Tᵢ,T,D,O},
+    lattice::Lattice{T,D,O},
     operation::AbstractSymmetryOperation{D};
     tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    positions = site_positions(lattice)
-    n = length(positions)
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
+    perm = _try_site_permutation(index, lattice, operation)
+    perm === nothing && _throw_not_a_symmetry(index, lattice, operation)
+    return perm
+end
 
-    lookup = Dict{NTuple{D,Int},Int}()
-    for (i, p) in enumerate(positions)
-        lookup[_site_key(lattice, p; tol_digits=tol_digits)] = i
-    end
+"""
+    _throw_not_a_symmetry(index, lattice, operation)
 
-    perm = Vector{Int}(undef, n)
-    for (i, p) in enumerate(positions)
+Report *why* `operation` failed, naming the offending site. Only reached on the error path, so
+it can afford to redo the mapping to find out.
+"""
+function _throw_not_a_symmetry(
+    index::_SiteIndex{D,T}, lattice::Lattice{T,D,O},
+    operation::AbstractSymmetryOperation{D}
+) where {T<:Real,D,O}
+    for (i, p) in enumerate(index.positions)
         image = apply(operation, p, lattice)
-        key = _site_key(lattice, image; tol_digits=tol_digits)
-        j = get(lookup, key, 0)
-        if j == 0
-            throw(ArgumentError(
-                "$operation is not a symmetry of this lattice: site $i is mapped to " *
-                "$(Vector(image)), where there is no lattice site"
-            ))
-        end
-        perm[i] = j
-    end
-
-    if !isperm(perm)
-        throw(ArgumentError(
-            "$operation is not a symmetry of this lattice: it does not map the sites " *
-            "one-to-one"
+        j = get(index.lookup, _site_key(lattice, image; tol_digits=index.tol_digits), 0)
+        j == 0 && throw(ArgumentError(
+            "$operation is not a symmetry of this lattice: site $i is mapped to " *
+            "$(Vector(image)), where there is no lattice site"
         ))
     end
-    return perm
+    throw(ArgumentError(
+        "$operation is not a symmetry of this lattice: it does not map the sites one-to-one"
+    ))
 end
 
 """
@@ -255,41 +258,34 @@ end
 
 Whether `operation` is a symmetry of `lattice`.
 
-With `check_edges=true` (the default) the operation must preserve the lattice's edge set as
-well as its site set. That distinction matters: a lattice built with `custom_edges`, or one
+With `check_edges=true` (the default) the operation must preserve the lattice's bond set as
+well as its site set. That distinction matters: a lattice built with explicit edges, or one
 with open boundaries in some directions, can admit an operation that permutes the sites
 correctly while mapping a bond onto a non-bond — such an operation is not a symmetry of any
 Hamiltonian defined on those bonds.
 """
 function is_symmetry(
-    lattice::Lattice{Tᵢ,T,D,O},
+    lattice::Lattice{T,D,O},
     operation::AbstractSymmetryOperation{D};
     check_edges::Bool=true,
     tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    perm = try
-        site_permutation(lattice, operation; tol_digits=tol_digits)
-    catch err
-        err isa ArgumentError && return false
-        rethrow()
-    end
-    return check_edges ? preserves_edges(lattice, perm) : true
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
+    perm = _try_site_permutation(index, lattice, operation)
+    perm === nothing && return false
+    return check_edges ? _preserves_edges(index, perm) : true
 end
 
 """
     preserves_edges(lattice, perm) -> Bool
 
-Whether the site permutation `perm` maps the lattice's edge set onto itself.
+Whether the site permutation `perm` maps the lattice's bond set onto itself.
 """
-function preserves_edges(
-    lattice::Lattice{Tᵢ,T,D,O}, perm::AbstractVector{<:Integer}
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    mg = lattice.metagraph
-    # Edges are undirected, so store each as a sorted pair.
-    edge_set = Set((min(_src(e), _dst(e)), max(_src(e), _dst(e))) for e in _edges_of(mg))
-    for e in _edges_of(mg)
-        i, j = perm[_src(e)], perm[_dst(e)]
-        (min(i, j), max(i, j)) in edge_set || return false
+function preserves_edges(lattice::Lattice, perm::AbstractVector{<:Integer})
+    edges = Set(lattice.edges)
+    for (i, j) in edges
+        a, b = perm[i], perm[j]
+        (min(a, b), max(a, b)) in edges || return false
     end
     return true
 end
@@ -306,9 +302,7 @@ These are what you hand to SymBasis: each generates a cyclic group of order `sha
 Non-periodic directions admit no translation symmetry and are skipped, so an open lattice
 gives an empty vector.
 """
-function translation_generators(
-    lattice::Lattice{Tᵢ,T,D,O}
-) where {Tᵢ<:Integer,T<:Real,D,O}
+function translation_generators(lattice::Lattice{T,D,O}) where {T<:Real,D,O}
     generators = Translation{D,Int}[]
     for d in 1:D
         # A direction of extent 1 wraps onto itself: the "translation" is the identity, which
@@ -327,11 +321,9 @@ Every translation that is a symmetry of `lattice`, including the identity.
 The group is the direct product of the cyclic groups along each periodic direction, so its
 order is `prod(shape[d] for d in periodic directions)`.
 """
-function translation_group(lattice::Lattice{Tᵢ,T,D,O}) where {Tᵢ<:Integer,T<:Real,D,O}
+function translation_group(lattice::Lattice{T,D,O}) where {T<:Real,D,O}
     ranges = ntuple(d -> lattice.periodic[d] ? (0:(lattice.shape[d]-1)) : (0:0), D)
-    return [
-        Translation(SVector{D,Int}(δ)) for δ in Iterators.product(ranges...)
-    ] |> vec
+    return vec([Translation(SVector{D,Int}(δ)) for δ in Iterators.product(ranges...)])
 end
 
 """
@@ -346,21 +338,43 @@ angles, enumerate integer matrices and keep those satisfying that condition; the
 operation is then `R = A M A⁻¹`.
 
 Entries are restricted to `{-1, 0, 1}`, which is sufficient for every crystallographic point
-group in the primitive basis (the 60° rotation of a triangular lattice, for instance, is
-`[1 -1; 1 0]`).
+group **in a primitive basis** — the 60° rotation of a triangular lattice, for instance, is
+`[1 -1; 1 0]`, and the 48 operations of `O_h` are integer matrices of this form in the cubic,
+body-centred, and face-centred primitive bases alike.
 """
-function _integer_point_candidates(basis::AbstractLatticeBasis{T,D,O}) where {T<:Real,D,O}
+function _integer_point_candidates(basis::LatticeBasis{T,D,O}) where {T<:Real,D,O}
     A = basis.vectors
     G = A' * A
 
     candidates = SMatrix{D,D,Float64}[]
     for entries in Iterators.product(ntuple(_ -> (-1, 0, 1), D * D)...)
         M = SMatrix{D,D,Int}(entries...)
-        abs(det(M)) ≈ 1 || continue
+        # Exact in integers: a unimodular M is a bijection of the Bravais lattice.
+        abs(det(M)) == 1 || continue
         isapprox(M' * G * M, G; atol=1e-10, rtol=1e-10) || continue
         push!(candidates, SMatrix{D,D,Float64}(A * M / A))
     end
     return candidates
+end
+
+"""
+    _compensating_translation(index, lattice, R; check_edges) -> Union{SVector,Nothing}
+
+Non-throwing core of [`compensating_translation`](@ref), taking a prebuilt site index.
+"""
+function _compensating_translation(
+    index::_SiteIndex{D,T}, lattice::Lattice{T,D,O}, R::SMatrix{D,D,Float64};
+    check_edges::Bool=true
+) where {T<:Real,D,O}
+    image₁ = R * SVector{D,Float64}(index.positions[1])
+    for target in index.positions
+        τ = SVector{D,Float64}(target) - image₁
+        perm = _try_site_permutation(index, lattice, SpaceOperation{D,Float64}(R, τ))
+        perm === nothing && continue
+        (check_edges && !_preserves_edges(index, perm)) && continue
+        return τ
+    end
+    return nothing
 end
 
 """
@@ -371,27 +385,17 @@ The Cartesian translation ``τ`` that makes ``\\{R \\mid τ\\}`` a symmetry of `
 
 `R` alone is rarely a symmetry of a lattice with a multi-site unit cell, because the symmetry
 centre need not be the coordinate origin. Any valid ``τ`` must carry the image of site 1 onto
-*some* site, so it suffices to try the `nv` candidates ``τ = r_j - R r_1`` and keep the first
-that works — turning an unbounded search into a linear one.
+*some* site, so it suffices to try the `n_sites` candidates ``τ = r_j - R r_1`` and keep the
+first that works — turning an unbounded search into a linear one.
 """
 function compensating_translation(
-    lattice::Lattice{Tᵢ,T,D,O},
-    R::AbstractMatrix;
-    check_edges::Bool=true,
-    tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    positions = site_positions(lattice)
-    Rmat = SMatrix{D,D,Float64}(R)
-    image₁ = Rmat * SVector{D,Float64}(positions[1])
-
-    for target in positions
-        τ = SVector{D,Float64}(target) - image₁
-        op = SpaceOperation{D,Float64}(Rmat, τ)
-        if is_symmetry(lattice, op; check_edges=check_edges, tol_digits=tol_digits)
-            return τ
-        end
-    end
-    return nothing
+    lattice::Lattice{T,D,O}, R::AbstractMatrix;
+    check_edges::Bool=true, tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
+    return _compensating_translation(
+        index, lattice, SMatrix{D,D,Float64}(R); check_edges=check_edges
+    )
 end
 
 """
@@ -403,20 +407,19 @@ possibly once paired with a compensating translation. Includes the identity.
 Candidates come from the integer-matrix condition described in `_integer_point_candidates` and
 are then filtered by whether some ``\\{R \\mid τ\\}`` actually permutes this lattice's sites,
 which accounts for the site offsets of a multi-site unit cell, the supercell shape, and the
-boundary conditions. With `check_edges=true` the edge set must be preserved too.
+boundary conditions. With `check_edges=true` the bond set must be preserved too.
 
 The returned operations carry only the orthogonal part `R`; use [`space_group`](@ref) to get
 the operations complete with their translations, or [`compensating_translation`](@ref) to
 recover the translation for a particular `R`.
 """
 function point_group(
-    lattice::Lattice{Tᵢ,T,D,O}; check_edges::Bool=true, tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
+    lattice::Lattice{T,D,O}; check_edges::Bool=true, tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
     operations = PointOperation{D,Float64}[]
     for R in _integer_point_candidates(lattice.basis)
-        τ = compensating_translation(
-            lattice, R; check_edges=check_edges, tol_digits=tol_digits
-        )
+        τ = _compensating_translation(index, lattice, R; check_edges=check_edges)
         τ === nothing && continue
         push!(operations, PointOperation{D,Float64}(R))
     end
@@ -435,28 +438,23 @@ group elements can coincide on a finite lattice, and counting them twice would m
 order of the group actually acting on the sites.
 """
 function space_group(
-    lattice::Lattice{Tᵢ,T,D,O}; check_edges::Bool=true, tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
+    lattice::Lattice{T,D,O}; check_edges::Bool=true, tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
     translations = translation_group(lattice)
 
     operations = SpaceOperation{D,Float64}[]
     seen = Set{Vector{Int}}()
     for R in _integer_point_candidates(lattice.basis)
-        τ₀ = compensating_translation(
-            lattice, R; check_edges=check_edges, tol_digits=tol_digits
-        )
+        τ₀ = _compensating_translation(index, lattice, R; check_edges=check_edges)
         τ₀ === nothing && continue
 
         for t in translations
             τ = τ₀ + lattice.basis.vectors * SVector{D,Float64}(t.displacement)
-            op = SpaceOperation{D,Float64}(SMatrix{D,D,Float64}(R), τ)
-            perm = try
-                site_permutation(lattice, op; tol_digits=tol_digits)
-            catch err
-                err isa ArgumentError && continue
-                rethrow()
-            end
-            check_edges && !preserves_edges(lattice, perm) && continue
+            op = SpaceOperation{D,Float64}(R, τ)
+            perm = _try_site_permutation(index, lattice, op)
+            perm === nothing && continue
+            (check_edges && !_preserves_edges(index, perm)) && continue
             perm in seen && continue
             push!(seen, perm)
             push!(operations, op)
@@ -475,8 +473,9 @@ Site permutation for translating by `cells` primitive cells along `axis`.
 This is the vector to feed `SymBasis.Translational`.
 """
 function translation_permutation(
-    lattice::Lattice{Tᵢ,T,D,O}, axis::Integer=1; cells::Integer=1, tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
+    lattice::Lattice{T,D,O}, axis::Integer=1;
+    cells::Integer=1, tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
     1 <= axis <= D || throw(ArgumentError("axis $axis is out of range for a $D-D lattice"))
     lattice.periodic[axis] || throw(ArgumentError(
         "axis $axis is not periodic, so it admits no translation symmetry"
@@ -488,26 +487,28 @@ end
 """
     reflection_permutation(lattice, axis=1) -> Vector{Int}
 
-Site permutation for the reflection that reverses `axis` about the Cartesian origin.
+Site permutation for the reflection that reverses `axis`.
 
 This is the vector to feed `SymBasis.SpatialReflection`. Throws if the reflection is not a
 symmetry of the lattice.
+
+The mirror plane is placed wherever the lattice actually admits one, which is not generally
+the coordinate origin: on an open chain it is the midpoint, and on a lattice with a multi-site
+unit cell it is fixed by the site offsets.
 """
 function reflection_permutation(
-    lattice::Lattice{Tᵢ,T,D,O}, axis::Integer=1; tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
+    lattice::Lattice{T,D,O}, axis::Integer=1; tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
     1 <= axis <= D || throw(ArgumentError("axis $axis is out of range for a $D-D lattice"))
     R = SMatrix{D,D,Float64}(Diagonal([i == axis ? -1.0 : 1.0 for i in 1:D]))
 
-    # The reflection plane need not pass through the origin: on an open chain the mirror sits
-    # at the midpoint, and on a lattice with a basis it is fixed by the site offsets.
-    τ = compensating_translation(lattice, R; tol_digits=tol_digits)
+    index = _site_index(lattice; tol_digits=tol_digits)
+    τ = _compensating_translation(index, lattice, R)
     τ === nothing && throw(ArgumentError(
         "reflection about axis $axis is not a symmetry of this lattice"
     ))
-    return site_permutation(
-        lattice, SpaceOperation{D,Float64}(R, τ); tol_digits=tol_digits
-    )
+    perm = _try_site_permutation(index, lattice, SpaceOperation{D,Float64}(R, τ))
+    return perm
 end
 
 """
@@ -519,19 +520,18 @@ orthogonal part has determinant `+1` — excluding the identity permutation.
 These are the vectors to feed `SymBasis.Rotational`, which requires a non-identity generator.
 """
 function rotation_permutations(
-    lattice::Lattice{Tᵢ,T,D,O}; tol_digits::Integer=TOL_DIGITS
-) where {Tᵢ<:Integer,T<:Real,D,O}
-    identity_perm = collect(1:_nv(lattice.metagraph))
+    lattice::Lattice{T,D,O}; tol_digits::Integer=TOL_DIGITS
+) where {T<:Real,D,O}
+    index = _site_index(lattice; tol_digits=tol_digits)
+    identity_perm = collect(1:n_sites(lattice))
+
     perms = Vector{Int}[]
     for R in _integer_point_candidates(lattice.basis)
         det(R) ≈ 1 || continue
-        τ = compensating_translation(lattice, R; tol_digits=tol_digits)
+        τ = _compensating_translation(index, lattice, R)
         τ === nothing && continue
-        perm = site_permutation(
-            lattice, SpaceOperation{D,Float64}(SMatrix{D,D,Float64}(R), τ);
-            tol_digits=tol_digits
-        )
-        perm == identity_perm && continue
+        perm = _try_site_permutation(index, lattice, SpaceOperation{D,Float64}(R, τ))
+        (perm === nothing || perm == identity_perm) && continue
         perm in perms || push!(perms, perm)
     end
     return perms
