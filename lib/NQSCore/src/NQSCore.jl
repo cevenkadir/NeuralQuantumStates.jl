@@ -1,0 +1,91 @@
+"""
+    NQSCore
+
+The interface backbone of the neural-quantum-states stack, plus the two variational state types
+and the log-derivative machinery they share.
+
+This corresponds to NetKet's `netket/vqs` together with `netket/stats`. It exists so that
+`NQSAnsatze`, `NQSSamplers`, and `NQSOptimisers` can be written against one agreed set of
+abstract types and function names without ever depending on each other — the role `SciMLBase`
+plays for SciML, or `ChainRulesCore` for the autodiff ecosystem.
+
+# What lives here
+
+- **Interfaces**: [`AbstractAnsatz`](@ref), [`AbstractVariationalState`](@ref),
+  [`AbstractSampler`](@ref), [`AbstractPreconditioner`](@ref), and the verbs
+  [`log_amplitude`](@ref), [`local_energy`](@ref), [`log_derivatives`](@ref),
+  [`parameters`](@ref), [`setparameters!`](@ref), [`expect`](@ref),
+  [`expect_and_grad`](@ref), [`sample`](@ref).
+- **Two state types**, mirroring NetKet's `vqs/mc/` and `vqs/full_summ/`:
+  [`MCState`](@ref) and [`FullSumState`](@ref). Both satisfy the same `expect` interface, so a
+  model can be validated by exact summation before any Markov chain is involved.
+- **[`Stats`](@ref)**: the single return type of every `expect` — mean, error of the mean,
+  variance, integrated autocorrelation time, and split-R̂.
+- **[`log_derivatives`](@ref)**: the `O_k = ∂ log ψ(s) / ∂θ_k` matrix, including the complex
+  arithmetic that variational Monte Carlo needs and that is easy to get subtly wrong.
+- **Reference implementations** with no approximations in them — [`LogStateVector`](@ref) and
+  [`ExactSampler`](@ref) — so that the machinery can be tested against exact answers rather than
+  against itself.
+
+# Backends
+
+Automatic differentiation is reached through DifferentiationInterface.jl, and every concrete
+backend (Enzyme, Zygote, Reactant) as well as Lux itself is a weak dependency loaded through a
+package extension. `using NQSCore` on its own pulls in no autodiff and no GPU code.
+
+# Example
+
+```julia
+using NQSCore, ConnectedConfigs, SymBasis, DifferentiationInterface, ForwardDiff
+
+dof, nsites = Spin(1 // 2), 4
+b = basis(dof_object(dof), nsites)
+
+a = LogStateVector(dof, nsites, b)
+vs = FullSumState(a, init_parameters(a); backend=AutoForwardDiff())
+
+expect(vs, H)                      # exact, zero error bar
+E, ∇ = expect_and_grad(vs, H)      # ...and its gradient
+```
+"""
+module NQSCore
+
+using Random
+using Random: AbstractRNG
+using Statistics: mean, var
+
+using ComponentArrays: ComponentArray, getaxes, getdata
+using Functors: fmap
+using DifferentiationInterface
+
+using ConnectedConfigs
+using SymBasis
+
+include("interface.jl")
+include("stats.jl")
+include("log_derivatives.jl")
+include("ansatz.jl")
+include("sampler.jl")
+include("states.jl")
+
+# interfaces
+export AbstractAnsatz, AbstractVariationalState, AbstractSampler, AbstractPreconditioner
+export log_amplitude, local_energy, parameters, setparameters!, ansatz, samples
+export expect, expect_and_grad, sample
+
+# statistics
+export Stats, statistics, weighted_statistics, exact_stats
+export integrated_autocorrelation, split_rhat
+
+# log-derivatives
+export log_derivatives, centered, flatten_parameters, fmap
+
+# reference implementations
+export LogStateVector, init_parameters, n_parameters
+export ExactSampler
+
+# variational states
+export FullSumState, MCState, probabilities, resample!, default_basis
+export local_estimators, sample_weights
+
+end # module NQSCore
