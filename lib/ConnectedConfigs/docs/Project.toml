@@ -1,0 +1,11 @@
+[deps]
+ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+[sources]
+ConnectedConfigs = {path = ".."}
+
+[compat]
+Documenter = "1"
