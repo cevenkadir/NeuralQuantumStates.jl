@@ -4,7 +4,7 @@
 
 *Lattice geometry, and the space groups it induces, for Julia*
 
-[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/) [![Build Status](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FLatticeSpaceGroups&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/LatticeSpaceGroups)
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/) [![Build Status](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml/badge.svg?branch=main)](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FLatticeSpaceGroups&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/LatticeSpaceGroups)
 </div>
 
 Symmetry-reduced exact diagonalization needs a **site permutation**: which site does site `i` become under a translation, a reflection, a rotation? Writing one by hand only ever works for a one-dimensional chain — `mod1.((1:N) .+ 1, N)` and nothing else. LatticeSpaceGroups.jl derives them from the lattice geometry, so a kagome torus is no harder than a chain. It finds the point group by solving the integer-matrix condition on the primitive basis and then keeping the operations that genuinely permute *that* lattice's sites under *its* boundary conditions — including the ones whose symmetry centre is not the coordinate origin, which is what a honeycomb, a diamond and an open chain all need. Its only dependency is [StaticArrays.jl](https://github.com/JuliaArrays/StaticArrays.jl).
@@ -18,17 +18,17 @@ Symmetry-reduced exact diagonalization needs a **site permutation**: which site 
 - **Almost no dependencies**: a plain struct holds the sites and bonds. Graph interop is available, but only if you ask for it.
 
 ## Predefined lattices
-| Spec | Dimension | Sites per cell | Coordination |
-|---|---|---|---|
-| `Hypercube` — with `Square` and `Cube` shorthands | any | 1 | `2D` |
-| `Triclinic` | 3 | 1 | 6 |
-| `Triangular` | 2 | 1 | 6 |
-| `Honeycomb` | 2 | 2 | 3 |
-| `Kagome` | 2 | 3 | 4 |
-| `BCC` | 3 | 1 | 8 |
-| `FCC` | 3 | 1 | 12 |
-| `Diamond` | 3 | 2 | 4 |
-| `Pyrochlore` | 3 | 4 | 6 |
+| Spec                                              | Dimension | Sites per cell | Coordination |
+| ------------------------------------------------- | --------- | -------------- | ------------ |
+| `Hypercube` — with `Square` and `Cube` shorthands | any       | 1              | `2D`         |
+| `Triclinic`                                       | 3         | 1              | 6            |
+| `Triangular`                                      | 2         | 1              | 6            |
+| `Honeycomb`                                       | 2         | 2              | 3            |
+| `Kagome`                                          | 2         | 3              | 4            |
+| `BCC`                                             | 3         | 1              | 8            |
+| `FCC`                                             | 3         | 1              | 12           |
+| `Diamond`                                         | 3         | 2              | 4            |
+| `Pyrochlore`                                      | 3         | 4              | 6            |
 
 Anything not on that list you can build yourself from a `LatticeBasis` and, if the connectivity is not distance-derived, an explicit bond list.
 

@@ -1,0 +1,66 @@
+name: CI (NQSAnsatze)
+on:
+  push:
+    branches:
+      - main
+    tags: ['*']
+    # Also triggered by its upstream lib packages (NQSCore, ConnectedConfigs, LatticeSpaceGroups): a change there
+    # can break this one, and a path filter that ignored them would hide that.
+    paths:
+      - 'lib/NQSAnsatze/**'
+      - 'lib/NQSCore/**'
+      - 'lib/ConnectedConfigs/**'
+      - 'lib/LatticeSpaceGroups/**'
+      - '.github/workflows/CI-NQSAnsatze.yml'
+  pull_request:
+    paths:
+      - 'lib/NQSAnsatze/**'
+      - 'lib/NQSCore/**'
+      - 'lib/ConnectedConfigs/**'
+      - 'lib/LatticeSpaceGroups/**'
+      - '.github/workflows/CI-NQSAnsatze.yml'
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          # 1.11 is this package's declared compat floor.
+          - '1.11'
+          - '1'
+          - 'nightly'
+      # Ubuntu only: a pure-Julia package whose cross-platform behaviour is already covered
+      # by the umbrella's test matrix. What this workflow adds is proof that the package
+      # resolves and tests in its own environment, which does not vary by platform.
+        os: [ubuntu-latest]
+        arch: [x64]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+        with:
+          project: lib/NQSAnsatze
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          project: lib/NQSAnsatze
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: lib/NQSAnsatze/src,lib/NQSAnsatze/ext
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: NQSAnsatze
