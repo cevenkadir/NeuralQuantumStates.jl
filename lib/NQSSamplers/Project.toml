@@ -1,0 +1,32 @@
+name = "NQSSamplers"
+uuid = "8197fea4-252d-4314-8d17-f953e3c380bc"
+version = "0.1.0-DEV"
+authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
+
+[deps]
+ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+[sources]
+ConnectedConfigs = {path = "../ConnectedConfigs"}
+NQSCore = {path = "../NQSCore"}
+
+[compat]
+ConnectedConfigs = "0.1"
+NQSCore = "0.1"
+SymBasis = "0.2.1"
+julia = "1.11"
+
+[extras]
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["DifferentiationInterface", "ForwardDiff", "LinearAlgebra", "OperatorAlgebra", "Test"]

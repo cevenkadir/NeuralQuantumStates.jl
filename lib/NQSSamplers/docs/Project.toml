@@ -1,0 +1,17 @@
+[deps]
+ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+NQSSamplers = "8197fea4-252d-4314-8d17-f953e3c380bc"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+[sources]
+ConnectedConfigs = {path = "../../ConnectedConfigs"}
+NQSCore = {path = "../../NQSCore"}
+NQSSamplers = {path = ".."}
+
+[compat]
+Documenter = "1"
