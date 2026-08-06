@@ -43,16 +43,19 @@ local_dimension(spec::Spin) = Int(2 * spec.s + 1)
 local_dimension(spec::Boson) = Int(spec.max_occupancy) + 1
 
 """
-    local_values(spec) -> Vector
+    local_values(spec) -> AbstractVector
 
 The physical value of each local state, indexed by digit + 1 — the same ordering as
 `dof_object(spec).ldof`. For a spin these are the magnetic quantum numbers `-s:s`; for a boson
 the occupation numbers `0:max_occupancy`.
+
+A range rather than a `Vector`, because this is called once per unpacking of a batch and there
+is nothing to gain from materializing it.
 """
 function local_values end
 
-local_values(spec::Spin) = collect(-spec.s:spec.s)
-local_values(spec::Boson) = collect(0:Int(spec.max_occupancy))
+local_values(spec::Spin) = -spec.s:spec.s
+local_values(spec::Boson) = 0:Int(spec.max_occupancy)
 
 function local_operators(spec::Spin)
     s = spec.s

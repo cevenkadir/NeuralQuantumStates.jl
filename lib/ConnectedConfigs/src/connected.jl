@@ -1,210 +1,439 @@
+# The hot loop. Everything here runs once per sample per optimization step, so it allocates
+# nothing per sample: the operator arrived pre-flattened from `compile`, and the branching
+# intermediates live in a scratch buffer reused across the whole batch.
+
 """
-    _apply_packed!(out, op, states)
+Ping-pong buffers for one term's intermediate `(configuration, amplitude)` pairs.
 
-Accumulate `op * states` into `out`, where both map a packed `BaseInt` configuration to an
-amplitude.
-
-This is the single-site kernel of the whole package. It mirrors the reference implementation in
-OperatorAlgebra's `OperatorAlgebraSymBasisExt`, reimplemented here so it can be driven over a
-batch and so the hot loop is under this package's control.
-
-Two input configurations differing only at `op`'s site can be carried onto the same output
-configuration whenever a row of `op.mat` has more than one entry, so contributions must be
-**accumulated** rather than assigned. That accumulation is what makes the intermediate index of
-a product of two operators on the same site get summed over.
+A term is applied one factor at a time, each factor reading the current pairs and writing the
+next ones, so two buffers are enough no matter how many factors there are.
 """
-function _apply_packed!(out::Dict{S,T}, op::Op, states::Dict{S,T}) where {S,T}
-    # `rawsite` strips any fermionic tag, leaving the plain site identifier, which is used
-    # directly as the digit position.
-    idx = OperatorAlgebra.rawsite(op.site)
-    mat = op.mat
-    for (s, amp) in states
-        d = Int(read(s, idx))                    # 0-based digit currently at this site
-        @inbounds for j in axes(mat, 1)
-            v = mat[j, d+1]
+struct Scratch{S,T}
+    a_states::Vector{S}
+    a_vals::Vector{T}
+    b_states::Vector{S}
+    b_vals::Vector{T}
+end
+
+function Scratch(op::CompiledOperator{T}, ::Type{S}) where {S,T}
+    width = max(op.max_branch, 1)
+    return Scratch(
+        Vector{S}(undef, width), Vector{T}(undef, width),
+        Vector{S}(undef, width), Vector{T}(undef, width),
+    )
+end
+
+"""
+Apply one term to a single configuration, returning `(n, states, vals)` — the number of
+`(configuration, amplitude)` pairs produced and the scratch buffers holding them.
+
+Which of the two buffers ends up holding the result depends on how many factors the term has,
+so it is returned rather than assumed.
+"""
+function _run_term(term::CompiledTerm{T}, state::S, scratch::Scratch{S,T}) where {S,T}
+    states, vals = scratch.a_states, scratch.a_vals
+    spare_states, spare_vals = scratch.b_states, scratch.b_vals
+
+    n = 1
+    @inbounds states[1] = state
+    @inbounds vals[1] = one(T)
+
+    for f in term.factors
+        m = 0
+        @inbounds for k in 1:n
+            s = states[k]
+            amp = vals[k]
+            d = read_digit(s, f.position)
+            for p in f.colptr[d+1]:(f.colptr[d+2]-1)
+                m += 1
+                spare_states[m] = write_digit(s, f.position, f.outs[p])
+                spare_vals[m] = amp * f.vals[p]
+            end
+        end
+        # An empty column annihilates the configuration -- lowering an already-empty bosonic
+        # site, say -- and with it the whole term.
+        m == 0 && return (0, states, vals)
+
+        n = m
+        states, spare_states = spare_states, states
+        vals, spare_vals = spare_vals, vals
+    end
+
+    return (n, states, vals)
+end
+
+"""
+Value a purely diagonal term takes on one configuration.
+
+Every factor is diagonal, so nothing branches and no configuration is ever written: the term
+contributes one number, the product of the diagonal entries the configuration selects.
+"""
+function _diagonal_value(term::CompiledTerm{T}, state) where {T}
+    v = one(T)
+    @inbounds for f in term.factors
+        d = read_digit(state, f.position)
+        lo = f.colptr[d+1]
+        lo < f.colptr[d+2] || return zero(T)     # a zero on the diagonal kills the term
+        v *= f.vals[lo]
+    end
+    return v
+end
+
+"""
+Write every connected configuration of `state` into column `b`, returning how many slots were
+used. Slots above the returned count are left untouched; padding is a separate step.
+"""
+function _fill_column!(
+    configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer,
+    op::CompiledOperator{T}, state::S, scratch::Scratch{S,T}
+) where {S,T}
+    diagonal = zero(T)
+    for term in op.diagonal
+        diagonal += _diagonal_value(term, state)
+    end
+
+    # Slot 1 is held for the diagonal and filled last, once its value is known.
+    k = 1
+    for term in op.offdiagonal
+        n, states, vals = _run_term(term, state, scratch)
+        for t in 1:n
+            v = @inbounds vals[t]
             iszero(v) && continue
-            s′ = write(s, idx, j - 1)
-            out[s′] = get(out, s′, zero(T)) + v * amp
+            s′ = @inbounds states[t]
+            # A non-diagonal matrix can still map a particular digit to itself, so this is a
+            # property of the sample, not of the term.
+            if s′ == state
+                diagonal += v
+            else
+                k += 1
+                configs[k, b] = s′
+                mels[k, b] = v
+            end
         end
     end
-    return out
-end
 
-function _apply_packed(op::Op, states::Dict{S,T}) where {S,T}
-    return _apply_packed!(Dict{S,T}(), op, states)
-end
-
-function _apply_packed(chain::OpChain, states::Dict{S,T}) where {S,T}
-    # OpChain([A, B]) is the matrix product A*B, so the rightmost factor acts first.
-    for op in Iterators.reverse(chain.ops)
-        states = _apply_packed(op, states)
+    if iszero(diagonal)
+        # Close the gap rather than leave an inert row: downstream, every padded row costs one
+        # full evaluation of the wavefunction.
+        for t in 2:k
+            configs[t-1, b] = configs[t, b]
+            mels[t-1, b] = mels[t, b]
+        end
+        return k - 1
     end
-    return states
+
+    configs[1, b] = state
+    mels[1, b] = diagonal
+    return k
 end
 
-function _apply_packed(sum_op::OpSum, states::Dict{S,T}) where {S,T}
+"""Fill slots `from:to` of column `b` with the inert padding: the sample, and a zero mel."""
+function _pad_column!(
+    configs::AbstractMatrix{S}, mels::AbstractMatrix{T},
+    b::Integer, from::Integer, to::Integer, state::S
+) where {S,T}
+    @inbounds for j in from:to
+        configs[j, b] = state
+        mels[j, b] = zero(T)
+    end
+    return nothing
+end
+
+"""
+    connected(operator, state) -> Dict
+
+Every configuration connected to `state`, mapped to its matrix element
+``\\langle s' \\vert \\hat{O} \\vert s \\rangle``.
+
+Contributions from different terms reaching the same configuration are summed, and entries
+that cancel to exactly zero are dropped.
+
+`operator` may be a [`CompiledOperator`](@ref), which skips the per-call setup entirely — the
+right choice when the same operator is queried repeatedly, as a Hamiltonian-driven Metropolis
+rule does twice per step.
+
+Use [`connected_padded`](@ref) for a whole batch: it returns arrays rather than a dictionary
+and is what a local energy should be built on.
+"""
+function connected end
+
+connected(operator, state) = connected(compile(operator), state)
+
+function connected(op::CompiledOperator{T}, state::S) where {S,T}
     out = Dict{S,T}()
-    for op in sum_op.ops
-        for (s, v) in _apply_packed(op, states)
-            out[s] = get(out, s, zero(T)) + v
+    scratch = Scratch(op, S)
+
+    diagonal = zero(T)
+    for term in op.diagonal
+        diagonal += _diagonal_value(term, state)
+    end
+    iszero(diagonal) || (out[state] = diagonal)
+
+    for term in op.offdiagonal
+        n, states, vals = _run_term(term, state, scratch)
+        for t in 1:n
+            v = @inbounds vals[t]
+            iszero(v) && continue
+            s′ = @inbounds states[t]
+            out[s′] = get(out, s′, zero(T)) + v
         end
     end
+
+    filter!(p -> !iszero(p.second), out)
     return out
 end
 
 """
-    _amplitude_type(H)
-
-Element type of the amplitudes `H` produces, promoted to at least `Float64` so that integer
-operator matrices (`PAULI_X` and friends are `Int`) do not truncate square roots.
-"""
-_amplitude_type(H::AbstractOp) = promote_type(float(eltype(H)), Float64)
-
-"""
-    connected(H, state) -> Dict{S,T}
-
-Every configuration connected to `state` by `H`, mapped to its matrix element
-``\\langle s' \\vert H \\vert s \\rangle``.
-
-Contributions from different terms of `H` reaching the same configuration are summed, and
-entries that cancel to exactly zero are dropped — a vanishing matrix element contributes
-nothing to any observable, and keeping it would only waste a slot in the padded output.
-
-Use [`connected_padded`](@ref) for a whole batch of states.
-"""
-function connected(H::AbstractOp, state::S) where {S}
-    T = _amplitude_type(H)
-    # Resolve Jordan-Wigner strings for fermionic sites. For an ordinary commuting basis this
-    # returns `H` unchanged.
-    flat = OperatorAlgebra._jw_expand(H, basis_info(H))
-    result = _apply_packed(flat, Dict{S,T}(state => one(T)))
-    filter!(p -> !iszero(p.second), result)
-    return result
-end
-
-"""
-    connected_padded(H, states) -> (; configs, mels, counts)
+    connected_padded(operator, states) -> (; configs, mels, counts)
 
 Connected configurations and matrix elements for a **batch** of packed configurations — the
 counterpart of NetKet's `get_conn_padded`, and the kernel a variational Monte Carlo local
 energy is built from.
 
+`states` may be an array of any shape. `configs` and `mels` gain one leading axis for the
+connections and keep the batch shape otherwise, so a vector of `B` states gives
+`(max_conn, B)` and an `(A, B)` matrix gives `(max_conn, A, B)`. `counts` has the shape of
+`states`. NetKet puts the connection axis last; here it comes first, because Julia is
+column-major and this is what keeps one sample's connections contiguous.
+
+`operator` may be a [`CompiledOperator`](@ref) from [`compile`](@ref), which skips the
+flattening work; passing the operator itself compiles it on every call.
+
 # Returns
-A named tuple of
-- `configs::Matrix{S}`: `(max_connections, batch)` connected configurations.
-- `mels::Matrix{T}`: `(max_connections, batch)` matrix elements.
-- `counts::Vector{Int}`: how many entries of each column are real rather than padding.
+- `configs`: `(max_conn, size(states)...)` connected configurations.
+- `mels`: `(max_conn, size(states)...)` matrix elements.
+- `counts`: how many entries per sample are real rather than padding.
 
 # Padding
 
-Different configurations have different numbers of connections, so the columns are padded to a
-common height. Padded slots repeat the sample itself and carry a matrix element of **zero**,
-rather than being marked `missing`. That choice matters: it keeps `mels` a concrete numeric
-array instead of a `Union{T,Missing}` one, and it makes the local energy
+Different configurations have different numbers of connections, so the leading axis is padded
+to a common length. Padded slots repeat the sample itself and carry a matrix element of
+**zero**, following NetKet. That choice matters twice over: it keeps `mels` a concrete numeric
+array rather than a `Union{T,Missing}` one, and it makes the local energy
 
 ```julia
 E_loc(s) = sum(mels[:, b] .* exp.(logψ.(configs[:, b]) .- logψ(s)))
 ```
 
-correct with no masking at all, because a zero matrix element contributes nothing.
+correct with no masking at all, because a zero matrix element contributes nothing — and a
+repeated sample is a configuration the wavefunction can safely be evaluated on.
 
-# Ordering
+# Ordering, and repeated configurations
 
-Within a column, entries are sorted by their packed configuration value. Nothing physical
-depends on the order, but a deterministic one makes results reproducible and diffable rather
-than dependent on hash iteration order.
+Entries appear in term order: the diagonal first when it is non-zero, then each off-diagonal
+term's contribution. Two terms reaching the **same** configuration produce two entries rather
+than one summed entry, which is what NetKet does and what keeps the kernel free of any
+per-sample hash table. Every consumer sums over the connection axis, so the result is
+unchanged; only the row count differs. Use [`connected`](@ref) when you want the summed,
+deduplicated matrix elements.
 """
-function connected_padded(H::AbstractOp, states::AbstractVector{S}) where {S}
-    T = _amplitude_type(H)
-    flat = OperatorAlgebra._jw_expand(H, basis_info(H))
+function connected_padded end
 
-    per_state = Vector{Vector{Pair{S,T}}}(undef, length(states))
-    for (b, s) in pairs(states)
-        d = _apply_packed(flat, Dict{S,T}(s => one(T)))
-        filter!(p -> !iszero(p.second), d)
-        entries = collect(d)
-        sort!(entries; by=p -> first(p).value)
-        per_state[b] = entries
+connected_padded(operator, states::AbstractArray) =
+    connected_padded(compile(operator), states)
+
+function connected_padded(op::CompiledOperator{T}, states::AbstractArray{S}) where {S,T}
+    flat = vec(states)
+    n = length(flat)
+    height = op.max_conn
+
+    configs = Matrix{S}(undef, height, n)
+    mels = Matrix{T}(undef, height, n)
+    counts = Vector{Int}(undef, n)
+    scratch = Scratch(op, S)
+
+    for b in 1:n
+        counts[b] = _fill_column!(configs, mels, b, op, @inbounds(flat[b]), scratch)
     end
 
-    counts = length.(per_state)
     max_conn = isempty(counts) ? 0 : maximum(counts)
+    for b in 1:n
+        _pad_column!(configs, mels, b, counts[b] + 1, max_conn, @inbounds(flat[b]))
+    end
 
-    configs = Matrix{S}(undef, max_conn, length(states))
-    mels = zeros(T, max_conn, length(states))
-    for (b, entries) in pairs(per_state)
-        for (j, (s′, v)) in pairs(entries)
-            configs[j, b] = s′
-            mels[j, b] = v
-        end
-        # Pad with the sample itself; the zero matrix element makes the slot inert.
-        for j in (length(entries)+1):max_conn
-            configs[j, b] = states[b]
-        end
+    return _reshape_result(configs, mels, counts, max_conn, size(states))
+end
+
+"""
+    connected_padded!(configs, mels, counts, compiled, states) -> (; configs, mels, counts)
+
+In-place [`connected_padded`](@ref), writing into caller-owned buffers.
+
+`configs` and `mels` must have `max_conn_size(compiled)` rows and the batch shape of `states`
+otherwise; `counts` must have the shape of `states`. Unlike the allocating form, the leading
+axis is **not** trimmed to the batch's actual maximum — the buffers keep their full height,
+with every slot above a sample's count padded inert — so the same buffers can be reused across
+calls whose connection counts differ.
+
+This is the form to use inside an optimization loop, where the batch shape is fixed and
+allocating a fresh pair of arrays per step is pure overhead. The per-sample work allocates
+nothing; what remains is one small scratch buffer whose size is set by the operator's
+branching and **not** by the batch, so the cost per step stops growing with the batch size.
+"""
+function connected_padded!(
+    configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
+    op::CompiledOperator{T}, states::AbstractArray{S}
+) where {S,T}
+    height = op.max_conn
+    expected = (height, size(states)...)
+    size(configs) == expected || throw(DimensionMismatch(
+        "configs is $(size(configs)); for these states and operator it must be $expected"
+    ))
+    size(mels) == expected || throw(DimensionMismatch(
+        "mels is $(size(mels)); for these states and operator it must be $expected"
+    ))
+    size(counts) == size(states) || throw(DimensionMismatch(
+        "counts is $(size(counts)); it must have the shape of states, $(size(states))"
+    ))
+
+    flat = vec(states)
+    n = length(flat)
+    flat_configs = reshape(configs, height, n)
+    flat_mels = reshape(mels, height, n)
+    flat_counts = vec(counts)
+    scratch = Scratch(op, S)
+
+    for b in 1:n
+        s = @inbounds flat[b]
+        k = _fill_column!(flat_configs, flat_mels, b, op, s, scratch)
+        @inbounds flat_counts[b] = k
+        _pad_column!(flat_configs, flat_mels, b, k + 1, height, s)
     end
 
     return (; configs=configs, mels=mels, counts=counts)
 end
 
 """
-    connected_padded(H, states, basis) -> (; configs, mels, counts)
+    connected_padded(operator, states, basis) -> (; configs, mels, counts)
 
-As above, but for configurations living in a **symmetry-reduced** `SymBasis.Basis`.
+As above, but for configurations living in a **symmetry-reduced** basis.
 
 Each connected configuration is mapped back to the representative of its symmetry orbit, and
 its matrix element is rescaled by the character of the symmetry operation together with the
 ratio of orbit norms — the standard factor `sqrt(norm[m] / norm[n])`. Configurations whose
 representative is absent from `basis` fall outside the sector and are dropped.
 
-Contributions landing on the same representative are summed after rescaling, which is
-essential: distinct configurations in the same orbit are the same basis state here.
+Contributions landing on the same representative **are** summed here, unlike the unreduced
+path: distinct configurations of one orbit are the same basis state, so leaving them separate
+would not merely be redundant, it would misreport how many basis states the sector connects.
+
+Matrix elements are complex even for a real operator, because the character need not be.
+
+Pass `compile(operator, basis)` instead of `operator` to hoist the state-to-index lookup out of
+the call.
 """
-function connected_padded(
-    H::AbstractOp, states::AbstractVector{S}, basis::SymBasis.Bases.Basis{S}
-) where {S}
-    T = complex(_amplitude_type(H))
-    flat = OperatorAlgebra._jw_expand(H, basis_info(H))
+connected_padded(operator, states::AbstractArray, basis) =
+    connected_padded(compile(operator, basis), states)
 
-    index_of = Dict(s => i for (i, s) in pairs(basis.states))
+function connected_padded(sector::CompiledSector{T}, states::AbstractArray{S}) where {S,T}
+    op = sector.operator
+    flat = vec(states)
+    n = length(flat)
+    height = op.max_conn
 
-    per_state = Vector{Vector{Pair{S,T}}}(undef, length(states))
-    for (b, s) in pairs(states)
-        n = get(index_of, s, 0)
-        n == 0 && throw(ArgumentError(
-            "sample $b is not a representative state of the given basis"
-        ))
+    configs = Matrix{S}(undef, height, n)
+    mels = Matrix{T}(undef, height, n)
+    counts = Vector{Int}(undef, n)
+    scratch = Scratch(op, S)
 
-        raw = _apply_packed(flat, Dict{S,T}(s => one(T)))
-
-        folded = Dict{S,T}()
-        for (s′, v) in raw
-            repr, phase = representative(s′, basis)
-            m = get(index_of, repr, 0)
-            m == 0 && continue                      # outside this symmetry sector
-            factor = sqrt(basis.norms[m] / basis.norms[n])
-            folded[repr] = get(folded, repr, zero(T)) + v * phase * factor
-        end
-
-        filter!(p -> !iszero(p.second), folded)
-        entries = collect(folded)
-        sort!(entries; by=p -> first(p).value)
-        per_state[b] = entries
+    for b in 1:n
+        counts[b] = _fill_sector_column!(configs, mels, b, sector, @inbounds(flat[b]), scratch)
     end
 
-    counts = length.(per_state)
     max_conn = isempty(counts) ? 0 : maximum(counts)
+    for b in 1:n
+        _pad_column!(configs, mels, b, counts[b] + 1, max_conn, @inbounds(flat[b]))
+    end
 
-    configs = Matrix{S}(undef, max_conn, length(states))
-    mels = zeros(T, max_conn, length(states))
-    for (b, entries) in pairs(per_state)
-        for (j, (s′, v)) in pairs(entries)
-            configs[j, b] = s′
-            mels[j, b] = v
-        end
-        for j in (length(entries)+1):max_conn
-            configs[j, b] = states[b]
+    return _reshape_result(configs, mels, counts, max_conn, size(states))
+end
+
+function _fill_sector_column!(
+    configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer,
+    sector::CompiledSector{T}, state::S, scratch::Scratch{S,T}
+) where {S,T}
+    op = sector.operator
+    norms = sector.norms
+
+    n = lookup_index(sector.lookup, state)
+    n == 0 && throw(ArgumentError(
+        "sample $b is not a representative state of the given basis"
+    ))
+
+    diagonal = zero(T)
+    for term in op.diagonal
+        diagonal += _diagonal_value(term, state)
+    end
+    k = _accumulate_folded!(configs, mels, b, 0, sector, n, state, diagonal)
+
+    for term in op.offdiagonal
+        m, states, vals = _run_term(term, state, scratch)
+        for t in 1:m
+            k = _accumulate_folded!(
+                configs, mels, b, k, sector, n, @inbounds(states[t]), @inbounds(vals[t])
+            )
         end
     end
 
-    return (; configs=configs, mels=mels, counts=counts)
+    # Cancellation between orbit members is real and common, so compact the exact zeros out
+    # rather than spend a wavefunction evaluation on each.
+    kept = 0
+    for j in 1:k
+        v = mels[j, b]
+        iszero(v) && continue
+        kept += 1
+        configs[kept, b] = configs[j, b]
+        mels[kept, b] = v
+    end
+    return kept
+end
+
+"""
+Fold one connected configuration back onto its orbit representative and add it to column `b`,
+returning the updated number of entries.
+
+Folding maps many configurations onto one representative, so entries must be summed. The
+search for an existing entry is linear because a column holds a handful of them, where
+scanning beats hashing outright.
+"""
+function _accumulate_folded!(
+    configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer, k::Int,
+    sector::CompiledSector{T}, n::Int, s′::S, v
+) where {S,T}
+    iszero(v) && return k
+
+    repr, phase = fold_state(s′, sector.basis)
+    m = lookup_index(sector.lookup, repr)
+    m == 0 && return k                           # outside this symmetry sector
+
+    w = v * phase * sqrt(sector.norms[m] / sector.norms[n])
+    for j in 1:k
+        if configs[j, b] == repr
+            mels[j, b] += w
+            return k
+        end
+    end
+
+    configs[k+1, b] = repr
+    mels[k+1, b] = w
+    return k + 1
+end
+
+"""
+Trim the connection axis to what the batch actually used, and restore the batch shape.
+
+The buffers were allocated at the operator's compile-time bound, which for a lattice
+Hamiltonian is usually exactly what the batch reaches — so the common case is a reshape with no
+copy at all, and only a batch that falls short of the bound pays for one.
+"""
+function _reshape_result(
+    configs::Matrix{S}, mels::Matrix{T}, counts::Vector{Int},
+    max_conn::Integer, batch::Dims
+) where {S,T}
+    trim(a) = size(a, 1) == max_conn ? a : a[1:max_conn, :]
+    return (;
+        configs=reshape(trim(configs), max_conn, batch...),
+        mels=reshape(trim(mels), max_conn, batch...),
+        counts=reshape(counts, batch),
+    )
 end

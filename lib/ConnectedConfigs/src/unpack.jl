@@ -62,16 +62,38 @@ common mistake of handing over a configuration built with the wrong convention â
 `0, 1` rather than `-1//2, 1//2`, say.
 """
 function packed(spec, configuration::AbstractVector; T::Type=UInt, Ti::Type=Int)
-    values = local_values(spec)
     B = local_dimension(spec)
 
     value = zero(T)
+    power = one(T)
     for (i, v) in pairs(configuration)
-        d = findfirst(==(v), values)
-        d === nothing && throw(ArgumentError(
-            "$v at site $i is not a local value of $spec (allowed: $values)"
+        d = _digit_of(spec, v)
+        (d === nothing || d < 0 || d >= B) && throw(ArgumentError(
+            "$v at site $i is not a local value of $spec (allowed: $(local_values(spec)))"
         ))
-        value += T(d - 1) * T(B)^(i - 1)
+        value += T(d) * power
+        power *= T(B)
     end
     return BaseInt{T,Ti,B}(value)
+end
+
+"""
+    _digit_of(spec, value) -> Union{Int,Nothing}
+
+Zero-based local digit holding `value`, or `nothing` when `spec` has no such local state.
+
+The generic fallback searches `local_values`, which is what any new specification type gets
+for free. `Spin` and `Boson` skip the search: their local values are an arithmetic sequence,
+so the digit is a subtraction away, and `packed` sits on the boundary every batch of network
+inputs crosses.
+"""
+_digit_of(spec, value) = something(findfirst(==(value), local_values(spec)), 0) - 1
+
+function _digit_of(spec::Spin, value)
+    d = value + spec.s
+    return isinteger(d) ? Int(d) : nothing
+end
+
+function _digit_of(::Boson, value)
+    return isinteger(value) ? Int(value) : nothing
 end
