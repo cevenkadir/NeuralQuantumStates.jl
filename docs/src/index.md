@@ -1,50 +1,70 @@
-```@raw html
----
-# https://vitepress.dev/reference/default-theme-home-page
-layout: home
-
-hero:
-  name: "NeuralQuantumStates.jl"
-  tagline: Neural quantum states in Julia
-  actions:
-    - theme: brand
-      text: Getting Started
-      link: /basics
-    - theme: alt
-      text: Public API
-      link: /lib/public
-    - theme: alt
-      text: View on GitHub
-      link: https://github.com/cevenkadir/NeuralQuantumStates.jl
-  image:
-    src: /logo.svg
-    alt: NeuralQuantumStates.jl
-
-features:
-  - icon: 🤔
-    title: What is NeuralQuantumStates.jl?
-    details: NeuralQuantumStates.jl is a Julia package under development to facilitate the training of neural quantum states (NQS) by variational Monte Carlo (VMC). The package aims to provide an efficient and extensible environment for the simulation of closed many-body quantum systems by exploiting the power of neural networks and modern computational resources.
-  
-  - icon: ⚙️
-    title: Is the package ready to use?
-    details: This package is a work in progress. Most of the functionality still needs to be implemented. The performance still needs to be optimized for both CPU and GPU. The API for this package might still be unstable. However, you are still welcomed to try it. <em><strong>Click for the details!</em></strong>
-    link: /basics
----
-
-## Development goals
- - <input type="checkbox" disabled checked> `Lattices` module to generate any Bravais lattice.
- - <input type="checkbox" disabled> `Networks` module to generate canonical artificial neural networks (ANN) via [Flux.jl](https://github.com/FluxML/Flux.jl). (*work in progress*)
- - <input type="checkbox" disabled> `VarStates` module to define variational quantum states. (*work in progress*)
- - <input type="checkbox" disabled checked> `Hilberts` module to define Hilbert spaces. 
- - <input type="checkbox" disabled checked> `Operators` module to define arbitrary quantum operators on a computational basis.
- - <input type="checkbox" disabled> `Samplers` module to sample variational quantum states with Markov chain Monte-Carlo (MCMC) methods.
- - <input type="checkbox" disabled> `Handlers` module to optimize variational quantum states with gradient-based methods.
- - <input type="checkbox" disabled> Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
- - <input type="checkbox" disabled> GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl).
+```@meta
+CurrentModule = NeuralQuantumStates
 ```
-## Bugs report and feature requests
-If you think you have found a bug or have a feature request, you can open an [issue](https://github.com/cevenkadir/NeuralQuantumStates.jl/issues/new).
+
+# NeuralQuantumStates.jl
+
+*Neural quantum states in Julia.*
+
+NeuralQuantumStates.jl facilitates the training of neural quantum states (NQS) by variational
+Monte Carlo (VMC). It aims to provide an efficient and extensible environment for simulating
+closed many-body quantum systems, taking inspiration from [NetKet](https://github.com/netket/netket)
+and [jVMC](https://github.com/markusschmitt/vmc_jax).
+
+!!! warning "Work in progress"
+    This package is under active development and is being reorganized (see below). Most
+    functionality is still being implemented, performance is not yet optimized for CPU or GPU,
+    and the API is unstable.
+
+## The package ecosystem
+
+NeuralQuantumStates.jl is being split from a single monolithic package into a set of focused
+packages, so that each piece can be used on its own without paying for the whole stack. In
+Julia this matters more than it does in Python: depending on a package means paying its compile
+latency, so a user who only wants lattice geometry should not have to load an autodiff engine
+and a GPU backend.
+
+The packages are organized in two tiers.
+
+**Tier 1 — no machine-learning dependencies.** Usable on their own for plain exact
+diagonalization.
+
+| Package | Role |
+|---|---|
+| [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases |
+| [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`, `OpChain`, `OpSum`, sparse/dense conversion, fermionic sites |
+| `LatticeSpaceGroups` | Lattice geometry, neighbour graphs, and the site permutations symmetry groups need |
+| `ConnectedConfigs` | The batched local-energy kernel: connected configurations and their matrix elements |
+
+**Tier 2 — the neural-network stack.**
+
+| Package | Role |
+|---|---|
+| `NQSCore` | Interfaces, the `MCState` and `FullSumState` variational states, log-derivatives, statistics |
+| `NQSAnsatze` | Ansätze built on Lux: RBM, symmetric RBM, Jastrow |
+| `NQSSamplers` | Metropolis sampling with local, exchange and Hamiltonian transition rules |
+| `NQSOptimisers` | Stochastic reconfiguration and its kernel-trick (MinSR) form |
+
+`NeuralQuantumStates.jl` itself is the umbrella: it re-exports all of the above and adds the
+predefined models and the [`VMC`](@ref) driver with callbacks and logging. Installing it gives
+you the whole stack.
+
+## Installation
+
+```julia
+import Pkg; Pkg.add(url="https://github.com/cevenkadir/NeuralQuantumStates.jl")
+```
+
+## Getting started
+
+See [Basics](@ref) for a worked example that builds a lattice, a Hilbert space, and a
+Hamiltonian, and then inspects its connected basis configurations.
+
+## Bug reports and feature requests
+
+Please open an [issue](https://github.com/cevenkadir/NeuralQuantumStates.jl/issues/new).
 
 ## Citation
-If you use this package in your work, 
-we would appreciate the following reference as in [CITATION.bib](https://github.com/cevenkadir/NeuralQuantumStates.jl/blob/main/CITATION.bib).
+
+If you use this package in your work, we would appreciate the reference in
+[CITATION.bib](https://github.com/cevenkadir/NeuralQuantumStates.jl/blob/main/CITATION.bib).
