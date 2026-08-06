@@ -1,0 +1,110 @@
+# Coverage is reported per package rather than pooled across the monorepo, so a number can be
+# attributed to the package it belongs to. Each CI workflow uploads under a flag named for its
+# package; the flags below say which files each one owns.
+#
+# `carryforward` is load-bearing, not decoration. CI is path-filtered: a pull request touching
+# only lib/LatticeSpaceGroups does not run NQSCore's workflow, so no NQSCore coverage is uploaded
+# for that commit. Without carryforward Codecov reads a missing upload as zero coverage and
+# reports a collapse on every such pull request. With it, each flag keeps its last known value
+# until its own workflow runs again.
+
+codecov:
+  # Wait for the uploads rather than commenting on the first one to arrive, which on this repo
+  # would mean commenting with one package's coverage and calling it the total.
+  notify:
+    wait_for_ci: true
+
+flag_management:
+  default_rules:
+    carryforward: true
+    statuses:
+      - type: project
+        target: auto
+        threshold: 1%
+
+flags:
+  NeuralQuantumStates:
+    paths:
+      - src/
+    carryforward: true
+  LatticeSpaceGroups:
+    paths:
+      - lib/LatticeSpaceGroups/src/
+      - lib/LatticeSpaceGroups/ext/
+    carryforward: true
+  ConnectedConfigs:
+    paths:
+      - lib/ConnectedConfigs/src/
+    carryforward: true
+  NQSCore:
+    paths:
+      - lib/NQSCore/src/
+    carryforward: true
+  NQSSamplers:
+    paths:
+      - lib/NQSSamplers/src/
+    carryforward: true
+  NQSAnsatze:
+    paths:
+      - lib/NQSAnsatze/src/
+      - lib/NQSAnsatze/ext/
+    carryforward: true
+  NQSOptimisers:
+    paths:
+      - lib/NQSOptimisers/src/
+    carryforward: true
+
+# Components group the same files for the web UI and pull-request comments. Unlike flags they
+# need no upload of their own -- they slice whatever has been uploaded -- so they keep working
+# even for a package whose workflow was skipped.
+component_management:
+  individual_components:
+    - component_id: NeuralQuantumStates
+      name: NeuralQuantumStates (umbrella)
+      paths:
+        - src/**
+    - component_id: LatticeSpaceGroups
+      name: LatticeSpaceGroups
+      paths:
+        - lib/LatticeSpaceGroups/**
+    - component_id: ConnectedConfigs
+      name: ConnectedConfigs
+      paths:
+        - lib/ConnectedConfigs/**
+    - component_id: NQSCore
+      name: NQSCore
+      paths:
+        - lib/NQSCore/**
+    - component_id: NQSSamplers
+      name: NQSSamplers
+      paths:
+        - lib/NQSSamplers/**
+    - component_id: NQSAnsatze
+      name: NQSAnsatze
+      paths:
+        - lib/NQSAnsatze/**
+    - component_id: NQSOptimisers
+      name: NQSOptimisers
+      paths:
+        - lib/NQSOptimisers/**
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+
+comment:
+  layout: "header, diff, flags, components, files"
+  require_changes: true
+
+ignore:
+  - "docs/**"
+  - "lib/*/docs/**"
+  - "test/**"
+  - "lib/*/test/**"
