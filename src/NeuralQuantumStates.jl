@@ -40,7 +40,7 @@ lat = build(Hypercube([8]; periodic=true))
 model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0))
 
 states = basis(model).states
-res = connected_padded(model.hamiltonian, states)
+res = connected_padded(compile(model.hamiltonian), states)
 ```
 
 # Migrating from the pre-split package
@@ -55,9 +55,12 @@ res = connected_padded(model.hamiltonian, states)
 | `Operators.build(:TransverseFieldIsing, h, l; ...)` | `build(TransverseFieldIsing(l; ...))` |
 | `Operators.connected_basis_configs(H, samples)` | `connected_padded(H, states)` |
 
-Two behavioural differences are deliberate: connected configurations are padded with a **zero**
-matrix element rather than `missing`, and the degree-of-freedom axis is always **first** (the
-old code put it last for Ising and first for Bose-Hubbard). See `ConnectedConfigs` for both.
+Three behavioural differences are deliberate: connected configurations are padded with a
+**zero** matrix element rather than `missing`; the degree-of-freedom axis is always **first**
+(the old code put it last for Ising and first for Bose-Hubbard); and two terms reaching the
+same configuration now produce two rows rather than one summed row, which every consumer sums
+over anyway. See `ConnectedConfigs` for all three, and `compile` for how to stop re-flattening
+a Hamiltonian on every call.
 """
 module NeuralQuantumStates
 

@@ -72,14 +72,29 @@ res = connected_padded(model.hamiltonian, b.states[1:3])
 res.mels
 ```
 
-Columns are padded to a common height with a **zero** matrix element, so the local energy
+Columns are padded to a common height with a **zero** matrix element and a repeat of the sample
+itself, so the local energy
 
 ```julia
 E_loc(s) = sum(res.mels[:, i] .* exp.(logψ.(res.configs[:, i]) .- logψ(s)))
 ```
 
-needs no masking — a zero contributes nothing. `res.counts` records how many entries of each
-column are real rather than padding.
+needs no masking — a zero contributes nothing, and every padded row is still a configuration
+the wavefunction can be evaluated on. `res.counts` records how many entries of each column are
+real rather than padding.
+
+Passing the Hamiltonian directly, as above, flattens it on every call. Compile it once when it
+is going to be used more than once, which in an optimization loop it always is:
+
+```@example 1
+compiled = compile(model.hamiltonian)
+connected_padded(compiled, b.states[1:3]).counts
+```
+
+The batch axis follows the input array, so a `(steps, chains)` block of Monte Carlo samples
+goes in without reshaping. See the
+[ConnectedConfigs manual](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/connected_states/)
+for the full contract.
 
 ## Symmetry sectors
 

@@ -41,21 +41,21 @@ autodiff engine and a GPU backend.
 
 **Tier 1 — no machine-learning dependencies.** Usable on their own for exact diagonalization.
 
-| Package | Role | Status |
-|---|---|---|
-| [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases | released |
-| [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`/`OpChain`/`OpSum`, sparse and dense conversion, fermionic sites | released |
-| `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need | ready to register |
-| `ConnectedConfigs` | Batched local-energy kernel: connected configurations and their matrix elements | working |
+| Package                                                             | Role                                                                                   | Status            |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------- |
+| [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl)            | States, degrees of freedom, symmetry groups, symmetry-reduced bases                    | released          |
+| [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`/`OpChain`/`OpSum`, sparse and dense conversion, fermionic sites | released          |
+| [`LatticeSpaceGroups`](lib/LatticeSpaceGroups)                      | Lattice geometry, bonds, and the site permutations symmetry groups need                | ready to register |
+| [`ConnectedConfigs`](lib/ConnectedConfigs)                          | Batched local-energy kernel: connected configurations and their matrix elements        | ready to register |
 
 **Tier 2 — the neural-network stack.**
 
-| Package | Role | Status |
-|---|---|---|
-| `NQSCore` | Interfaces, `MCState` and `FullSumState`, log-derivatives, Monte Carlo statistics | working |
-| `NQSAnsatze` | Ansätze on [Lux.jl](https://github.com/LuxDL/Lux.jl): RBM, symmetric RBM, Jastrow | working |
-| `NQSSamplers` | Metropolis sampler with local, exchange and Hamiltonian transition rules | working |
-| `NQSOptimisers` | Stochastic reconfiguration, MinSR, natural gradient | working |
+| Package         | Role                                                                              | Status  |
+| --------------- | --------------------------------------------------------------------------------- | ------- |
+| `NQSCore`       | Interfaces, `MCState` and `FullSumState`, log-derivatives, Monte Carlo statistics | working |
+| `NQSAnsatze`    | Ansätze on [Lux.jl](https://github.com/LuxDL/Lux.jl): RBM, symmetric RBM, Jastrow | working |
+| `NQSSamplers`   | Metropolis sampler with local, exchange and Hamiltonian transition rules          | working |
+| `NQSOptimisers` | Stochastic reconfiguration, MinSR, natural gradient                               | working |
 
 `NeuralQuantumStates.jl` itself is the umbrella: it re-exports the above and provides the
 predefined models and the `VMC` driver with callbacks and logging. Installing it gives you the
@@ -90,17 +90,23 @@ old code was removed. The retired sources remain in git history — recover them
 
 ### Migrating
 
-| Was | Now |
-|---|---|
+| Was                                                     | Now                                         |
+| ------------------------------------------------------- | ------------------------------------------- |
 | `Lattices.build(:Hypercube, [8], 1.0; periodic=[true])` | `build(Hypercube([8], 1.0; periodic=true))` |
-| `nv(lattice)` | `n_sites(lattice)` |
-| `Hilberts.build(:Spin, 1//2, N)` | `basis(dof_object(Spin(1//2)), N)` |
-| `Operators.build(:TransverseFieldIsing, h, l; ...)` | `build(TransverseFieldIsing(l; ...))` |
-| `Operators.connected_basis_configs(H, samples)` | `connected_padded(H, states)` |
+| `nv(lattice)`                                           | `n_sites(lattice)`                          |
+| `Hilberts.build(:Spin, 1//2, N)`                        | `basis(dof_object(Spin(1//2)), N)`          |
+| `Operators.build(:TransverseFieldIsing, h, l; ...)`     | `build(TransverseFieldIsing(l; ...))`       |
+| `Operators.connected_basis_configs(H, samples)`         | `connected_padded(H, states)`               |
 
-Two behavioural changes are deliberate: connected configurations are padded with a **zero**
-matrix element rather than `missing`, and the degree-of-freedom axis is always **first** (the
-old code put it last for Ising and first for Bose-Hubbard).
+Three behavioural changes are deliberate: connected configurations are padded with a **zero**
+matrix element rather than `missing`; the degree-of-freedom axis is always **first** (the old
+code put it last for Ising and first for Bose-Hubbard); and two terms reaching the same
+configuration now produce two rows rather than one summed row, which every consumer sums over
+anyway.
+
+`connected_padded` also accepts a batch of any shape, and `compile(H)` flattens a Hamiltonian
+once so that the per-step cost stops including it — worth about two orders of magnitude on the
+kernel. See the [ConnectedConfigs README](lib/ConnectedConfigs/README.md).
 
 ### Further goals
 - [ ] Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
