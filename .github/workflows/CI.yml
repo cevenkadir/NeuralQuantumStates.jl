@@ -18,7 +18,9 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.9'
+          # Must match the `julia` compat bound declared by every package. The `[sources]`
+          # entries that resolve the lib/* packages also require 1.11 or newer.
+          - '1.11'
           - 'nightly'
         os:
           - ubuntu-latest
