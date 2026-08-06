@@ -45,7 +45,7 @@ autodiff engine and a GPU backend.
 |---|---|---|
 | [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases | released |
 | [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`/`OpChain`/`OpSum`, sparse and dense conversion, fermionic sites | released |
-| `LatticeSpaceGroups` | Lattice geometry, neighbour graphs, and the site permutations symmetry groups need | working |
+| `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need | ready to register |
 | `ConnectedConfigs` | Batched local-energy kernel: connected configurations and their matrix elements | working |
 
 **Tier 2 — the neural-network stack.**
@@ -92,7 +92,8 @@ old code was removed. The retired sources remain in git history — recover them
 
 | Was | Now |
 |---|---|
-| `Lattices.build(:Hypercube, [8], 1.0; periodic=[true])` | `build(Hypercube([8], 1.0; periodic=[true]))` |
+| `Lattices.build(:Hypercube, [8], 1.0; periodic=[true])` | `build(Hypercube([8], 1.0; periodic=true))` |
+| `nv(lattice)` | `n_sites(lattice)` |
 | `Hilberts.build(:Spin, 1//2, N)` | `basis(dof_object(Spin(1//2)), N)` |
 | `Operators.build(:TransverseFieldIsing, h, l; ...)` | `build(TransverseFieldIsing(l; ...))` |
 | `Operators.connected_basis_configs(H, samples)` | `connected_padded(H, states)` |
@@ -104,6 +105,11 @@ old code put it last for Ising and first for Bose-Hubbard).
 ### Further goals
 - [ ] Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
 - [ ] GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Each package under [`lib/`](lib/) carries the same licence, so a
+subdirectory can be registered on its own.
 
 ## Bugs report and feature requests
 If you think you have found a bug or have a feature request, you can open an [issue](https://github.com/cevenkadir/NeuralQuantumStates.jl/issues/new).
