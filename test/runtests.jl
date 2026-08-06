@@ -4,7 +4,7 @@ using LinearAlgebra
 using Test
 
 # Reference outputs from the pre-split `Operators.connected_basis_configs`, which has since
-# been deleted (it is archived under archive/pre-split/). Reproducing them through the new
+# been deleted (recover it with `git show 0774c25:archive/pre-split/`). Reproducing them via the new
 # stack — lattice bonds, model definition, and local-energy kernel together — is what licensed
 # that deletion, and this is the end-to-end statement of it.
 include(joinpath(@__DIR__, "golden", "tfi_chain8.jl"))
