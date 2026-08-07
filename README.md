@@ -90,7 +90,7 @@ final_energy(log)
 The pre-split `Lattices`, `Hilberts`, and `Operators` modules have been retired. `Lattices`
 became `LatticeSpaceGroups`, `Hilberts` is replaced by SymBasis.jl, and `Operators` by
 OperatorAlgebra.jl together with `ConnectedConfigs` — which was proved to reproduce the old
-matrix elements exactly against the reference data in [`test/golden/`](test/golden/) before the
+matrix elements exactly against the reference data in [`lib/ConnectedConfigs/test/golden/`](lib/ConnectedConfigs/test/golden/) before the
 old code was removed. The retired sources remain in git history — recover them with
 `git show 0774c25:archive/pre-split/` — as does the pre-split scratch work under
 `archive/scratch/`.

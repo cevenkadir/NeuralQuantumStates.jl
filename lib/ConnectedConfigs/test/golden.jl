@@ -1,7 +1,7 @@
 """
 Equivalence with the pre-split `Operators.connected_basis_configs`.
 
-This is the acceptance gate for the whole package: the reference arrays in `test/golden/` were
+This is the acceptance gate for the whole package: the reference arrays in `test/golden/` (inside this package) were
 generated from the deleted implementation, and reproducing them is what licenses deleting it.
 
 # What "equivalent" means here
@@ -25,7 +25,10 @@ using ConnectedConfigs
 using SymBasis
 using Test
 
-const GOLDEN_DIR = joinpath(@__DIR__, "..", "..", "..", "test", "golden")
+# Inside the package, not at the monorepo root: a registered package is published as its own
+# subdirectory tree, so data reached for across `../../..` simply would not exist for anyone who
+# installed it, and `Pkg.test` would fail on a missing file.
+const GOLDEN_DIR = joinpath(@__DIR__, "golden")
 include(joinpath(GOLDEN_DIR, "tfi_chain8.jl"))
 include(joinpath(GOLDEN_DIR, "bhm_chain16.jl"))
 

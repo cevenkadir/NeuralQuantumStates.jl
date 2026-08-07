@@ -7,8 +7,11 @@ using Test
 # been deleted (recover it with `git show 0774c25:archive/pre-split/`). Reproducing them via the new
 # stack — lattice bonds, model definition, and local-energy kernel together — is what licensed
 # that deletion, and this is the end-to-end statement of it.
-include(joinpath(@__DIR__, "golden", "tfi_chain8.jl"))
-include(joinpath(@__DIR__, "golden", "bhm_chain16.jl"))
+# The data lives inside ConnectedConfigs so that package stays self-contained when published;
+# the umbrella is only ever built from this repository, so reaching into `lib/` is safe here.
+const GOLDEN_DIR = joinpath(@__DIR__, "..", "lib", "ConnectedConfigs", "test", "golden")
+include(joinpath(GOLDEN_DIR, "tfi_chain8.jl"))
+include(joinpath(GOLDEN_DIR, "bhm_chain16.jl"))
 
 """
     reference_dict(configs, mels) -> Dict
