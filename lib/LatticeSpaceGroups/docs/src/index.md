@@ -6,6 +6,8 @@ CurrentModule = LatticeSpaceGroups
 
 *Lattice geometry, and the space groups it induces.*
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/) [![Build Status](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml/badge.svg?branch=main)](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/branch/main/graph/badge.svg?flag=LatticeSpaceGroups)](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/flags?flag=LatticeSpaceGroups) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FLatticeSpaceGroups&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/LatticeSpaceGroups) [![Total Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FLatticeSpaceGroups&query=total_requests&label=Total%20Downloads)](https://juliapkgstats.com/pkg/LatticeSpaceGroups)
+
 Symmetry-reduced exact diagonalization needs a **site permutation**: which site does site `i`
 become under a translation, a reflection, a rotation? Writing one by hand only ever works for a
 one-dimensional chain — `mod1.((1:N) .+ 1, N)` and nothing else. This package derives them from

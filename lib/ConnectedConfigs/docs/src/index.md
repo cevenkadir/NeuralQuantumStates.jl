@@ -6,6 +6,8 @@ CurrentModule = ConnectedConfigs
 
 *The batched connected-configurations kernel for quantum lattice models.*
 
+[![Stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/stable/) [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/) [![Build Status](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml/badge.svg?branch=main)](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/branch/main/graph/badge.svg?flag=ConnectedConfigs)](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/flags?flag=ConnectedConfigs) [![Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FConnectedConfigs&query=total_requests&suffix=%2Fmonth&label=Downloads)](https://juliapkgstats.com/pkg/ConnectedConfigs) [![Total Downloads](https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FConnectedConfigs&query=total_requests&label=Total%20Downloads)](https://juliapkgstats.com/pkg/ConnectedConfigs)
+
 Variational Monte Carlo spends nearly all its time answering one question, several thousand
 times per optimization step: given a configuration ``\vert s \rangle`` and a Hamiltonian
 ``\hat{H}``, which configurations ``\vert s' \rangle`` does ``\hat{H}`` connect it to, and with

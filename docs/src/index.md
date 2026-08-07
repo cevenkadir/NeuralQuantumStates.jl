@@ -6,6 +6,8 @@ CurrentModule = NeuralQuantumStates
 
 *Neural quantum states in Julia.*
 
+[![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://cevenkadir.github.io/NeuralQuantumStates.jl/dev/) [![Build Status](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI.yml?query=branch%3Amain) [![Coverage](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/cevenkadir/NeuralQuantumStates.jl)
+
 NeuralQuantumStates.jl facilitates the training of neural quantum states (NQS) by variational
 Monte Carlo (VMC). It aims to provide an efficient and extensible environment for simulating
 closed many-body quantum systems, taking inspiration from [NetKet](https://github.com/netket/netket)
