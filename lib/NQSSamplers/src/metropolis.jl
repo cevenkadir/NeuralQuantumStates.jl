@@ -54,7 +54,7 @@ end
 
 """Log of `|ψ|²` for a batch of packed configurations."""
 function _log_prob(a::AbstractAnsatz, θ, states::AbstractVector)
-    x = ConnectedBasisConfigurations.configurations(a.dof, states, a.nsites)
+    x = ConnectedBasisConfigurations.configurations(NQSCore.dof(a), states, NQSCore.n_sites(a))
     return 2 .* real.(log_amplitude(a, θ, x))
 end
 
@@ -62,10 +62,21 @@ end
 _admissible(::Nothing, s) = true
 _admissible(basis, s) = s in basis.states
 
+"""
+The sampler state is the configuration each chain finished on.
+
+Handing it back resumes those chains rather than restarting them, which also means the burn-in
+is skipped: the chains are already where burn-in would have taken them. Over an optimization run
+that turns the equilibration cost from something paid every step into something paid once.
+"""
 function NQSCore.sample(
-    sampler::MetropolisSampler, a::AbstractAnsatz, θ, rng::AbstractRNG
+    sampler::MetropolisSampler, a::AbstractAnsatz, θ, rng::AbstractRNG, state=nothing
 )
-    chains = copy(sampler.initial)
+    warm = state !== nothing
+    chains = warm ? copy(state) : copy(sampler.initial)
+    length(chains) == sampler.n_chains || throw(ArgumentError(
+        "got $(length(chains)) chain configurations for $(sampler.n_chains) chains"
+    ))
     for s in chains
         _admissible(sampler.basis, s) || throw(ArgumentError(
             "an initial configuration is not in the sampler's basis"
@@ -74,19 +85,26 @@ function NQSCore.sample(
 
     logp = _log_prob(a, θ, chains)
 
-    total_steps = sampler.burn_in + sampler.n_samples * sampler.thinning
+    burn_in = warm ? 0 : sampler.burn_in
+    total_steps = burn_in + sampler.n_samples * sampler.thinning
     out = Matrix{eltype(chains)}(undef, sampler.n_samples, sampler.n_chains)
     kept = 0
     accepted = 0
     proposed = 0
 
+    # Hoisted out of the step loop: three allocations per Markov step is three allocations too
+    # many when the whole point of the loop is that a step is cheap.
+    proposals = similar(chains)
+    corrections = zeros(Float64, sampler.n_chains)
+    movable = falses(sampler.n_chains)
+
+    spec, nsites = NQSCore.dof(a), NQSCore.n_sites(a)
     for step in 1:total_steps
-        proposals = similar(chains)
-        corrections = zeros(Float64, sampler.n_chains)
-        movable = falses(sampler.n_chains)
+        fill!(corrections, 0.0)
+        fill!(movable, false)
 
         for c in 1:sampler.n_chains
-            s′, correction = propose(sampler.rule, chains[c], a.dof, a.nsites, rng)
+            s′, correction = propose(sampler.rule, chains[c], spec, nsites, rng)
             if s′ == chains[c] || !_admissible(sampler.basis, s′)
                 proposals[c] = chains[c]        # nothing to evaluate; the chain stays put
             else
@@ -110,14 +128,14 @@ function NQSCore.sample(
             end
         end
 
-        if step > sampler.burn_in && (step - sampler.burn_in) % sampler.thinning == 0
+        if step > burn_in && (step - burn_in) % sampler.thinning == 0
             kept += 1
             kept <= sampler.n_samples && (out[kept, :] .= chains)
         end
     end
 
     ACCEPTANCE[] = proposed == 0 ? 0.0 : accepted / proposed
-    return out
+    return out, chains
 end
 
 """

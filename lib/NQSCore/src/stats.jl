@@ -75,7 +75,13 @@ function integrated_autocorrelation(chain::AbstractVector{<:Real})
 
     τ = 1.0
     for lag in 1:(n-1)
-        ρ = sum(@views(x[1:(n-lag)]) .* @views(x[(1+lag):n])) / denom
+        # Accumulated in a loop rather than as `sum(x[1:n-lag] .* x[1+lag:n])`, which would
+        # materialize a fresh array on every one of these iterations.
+        acc = zero(eltype(x))
+        @inbounds @simd for i in 1:(n-lag)
+            acc += x[i] * x[i+lag]
+        end
+        ρ = acc / denom
         ρ <= 0 && break
         τ += 2ρ
     end
@@ -96,12 +102,16 @@ function split_rhat(chains::AbstractMatrix{<:Real})
     n_steps < 4 && return 1.0
 
     half = n_steps ÷ 2
-    pieces = [chains[1:half, c] for c in 1:n_chains]
-    append!(pieces, [chains[(half+1):(2half), c] for c in 1:n_chains])
-
-    m = length(pieces)
-    means = mean.(pieces)
-    variances = var.(pieces)
+    m = 2 * n_chains
+    means = Vector{Float64}(undef, m)
+    variances = Vector{Float64}(undef, m)
+    for c in 1:n_chains
+        # Views, not copies: the halves are only ever reduced over.
+        lower = @view chains[1:half, c]
+        upper = @view chains[(half+1):(2half), c]
+        means[c], variances[c] = mean(lower), var(lower)
+        means[n_chains+c], variances[n_chains+c] = mean(upper), var(upper)
+    end
 
     W = mean(variances)                       # within-piece variance
     iszero(W) && return 1.0
@@ -125,15 +135,16 @@ function statistics(values::AbstractMatrix)
     μ = mean(total)
     σ² = var(total)
 
-    n_steps, n_chains = size(values)
-    real_values = real.(values)
+    n_chains = size(values, 2)
+    # Only complex data needs converting; real data is used as it stands.
+    real_values = eltype(values) <: Real ? values : real.(values)
 
-    τ = mean(integrated_autocorrelation(real_values[:, c]) for c in 1:n_chains)
-    r̂ = n_chains > 1 ? split_rhat(real_values) : split_rhat(reshape(real_values, :, 1))
+    τ = mean(integrated_autocorrelation(view(real_values, :, c)) for c in 1:n_chains)
+    r̂ = split_rhat(real_values)
 
     if n_chains > 1
         # Between-chain spread: assumes only that the chains are mutually independent.
-        chain_means = [mean(values[:, c]) for c in 1:n_chains]
+        chain_means = [mean(view(values, :, c)) for c in 1:n_chains]
         err = sqrt(var(chain_means) / n_chains)
     else
         err = sqrt(max(σ², 0) * τ / length(total))

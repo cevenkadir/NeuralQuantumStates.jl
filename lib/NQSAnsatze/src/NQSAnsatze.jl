@@ -42,6 +42,7 @@ using LinearAlgebra
 using Random: AbstractRNG, default_rng, randn
 
 using Lux
+using SymBasis
 
 using NQSCore
 using NQSCore: AbstractAnsatz

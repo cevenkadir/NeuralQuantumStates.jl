@@ -2,6 +2,7 @@ using NQSAnsatze
 
 using ConnectedBasisConfigurations
 using DifferentiationInterface
+using Functors: fmap
 using LatticeSpaceGroups
 using LinearAlgebra
 using Lux
@@ -160,7 +161,7 @@ end
 
         rng = Xoshiro(5)
         a = LuxAnsatz(RBM(nsites, 4), dof, nsites; rng=rng)
-        vs = FullSumState(a, init_parameters(a, rng), BACKEND)
+        vs = FullSumState(a, init_parameters(a, rng); backend=BACKEND)
 
         E_initial = real(expect(vs, H).mean)
         for _ in 1:3000

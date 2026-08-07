@@ -78,6 +78,6 @@ H = OpSum(vcat(
     [Op(2 .* ops.sx, i) for i in 1:nsites],
 ))
 
-vs = FullSumState(a, init_parameters(a, Xoshiro(0)), AutoForwardDiff())
+vs = FullSumState(a, init_parameters(a, Xoshiro(0)); backend=AutoForwardDiff())
 expect(vs, H)
 ```

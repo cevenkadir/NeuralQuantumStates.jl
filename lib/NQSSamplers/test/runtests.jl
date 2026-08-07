@@ -90,13 +90,13 @@ end
         # Anything wrong in the acceptance test, the proposal correction, or the burn-in shows
         # up as a mismatch between the sampled and exact distributions.
         dof, b, a, θ = fixture(4; seed=2)
-        exact = NQSCore.probabilities(FullSumState(a, θ, BACKEND))
+        exact = NQSCore.probabilities(FullSumState(a, θ; backend=BACKEND))
 
         for rule in (LocalRule(), HamiltonianRule(tfi(4; h_x=1.0)))
             starts = random_configurations(dof, 4, 6, Xoshiro(3))
             sampler = MetropolisSampler(rule, starts;
                 n_chains=6, n_samples=40_000, burn_in=2_000, thinning=2)
-            drawn = NQSCore.sample(sampler, a, θ, Xoshiro(4))
+            drawn, _ = NQSCore.sample(sampler, a, θ, Xoshiro(4))
 
             tv = 0.5 * sum(abs.(empirical(drawn, b) .- exact))   # total variation distance
             @test tv < 0.02
@@ -108,7 +108,47 @@ end
         starts = random_configurations(dof, 4, 5, Xoshiro(0))
         sampler = MetropolisSampler(LocalRule(), starts;
             n_chains=5, n_samples=200, burn_in=50)
-        @test size(NQSCore.sample(sampler, a, θ, Xoshiro(1))) == (200, 5)
+        @test size(first(NQSCore.sample(sampler, a, θ, Xoshiro(1)))) == (200, 5)
+    end
+
+    @testset "chains resume from the returned sampler state" begin
+        dof, b, a, θ = fixture(4; seed=11)
+        starts = random_configurations(dof, 4, 4, Xoshiro(0))
+        sampler = MetropolisSampler(LocalRule(), starts;
+            n_chains=4, n_samples=100, burn_in=500)
+
+        drawn, state = NQSCore.sample(sampler, a, θ, Xoshiro(1))
+        @test length(state) == 4
+        @test state == vec(drawn[end, :])       # where each chain finished
+
+        @testset "a resumed run picks up from there" begin
+            # Handing the state back skips burn-in, so the first kept sample is one Metropolis
+            # step from where the previous run ended rather than 500 steps from `starts`.
+            again, state2 = NQSCore.sample(sampler, a, θ, Xoshiro(2), state)
+            @test size(again) == (100, 4)
+            @test length(state2) == 4
+            for c in 1:4
+                # One step can move a chain or leave it; either way it cannot have travelled
+                # further than a single local flip from where it resumed.
+                s0 = configurations(dof, state[c], 4)
+                s1 = configurations(dof, again[1, c], 4)
+                @test count(s0 .!= s1) <= 1
+            end
+        end
+
+        @testset "a state of the wrong length is rejected" begin
+            @test_throws ArgumentError NQSCore.sample(sampler, a, θ, Xoshiro(3), state[1:2])
+        end
+
+        @testset "an MCState keeps the chain warm across a parameter change" begin
+            mc = MCState(a, θ, sampler; backend=BACKEND, rng=Xoshiro(4))
+            first_state = NQSCore.sampler_state(mc)
+            @test first_state !== nothing
+            setparameters!(mc, θ .+ 0.01)
+            @test NQSCore.sampler_state(mc) === first_state   # kept, not discarded
+            samples(mc)                                       # redraw at the new parameters
+            @test NQSCore.sampler_state(mc) !== first_state   # ...and it advanced
+        end
     end
 
     @testset "MCState with Metropolis agrees with FullSumState" begin
@@ -116,7 +156,7 @@ end
         dof, b, a, θ = fixture(nsites; seed=5)
         H = tfi(nsites; J=1.0, h_x=0.8, h_z=0.2)
 
-        exact = expect(FullSumState(a, θ, BACKEND), H)
+        exact = expect(FullSumState(a, θ; backend=BACKEND), H)
 
         starts = random_configurations(dof, nsites, 8, Xoshiro(6))
         sampler = MetropolisSampler(LocalRule(), starts;
@@ -149,14 +189,14 @@ end
         @testset "ExchangeRule stays in the sector and mixes" begin
             sampler = MetropolisSampler(ExchangeRule(), starts;
                 n_chains=4, n_samples=20_000, burn_in=1_000, basis=b)
-            drawn = NQSCore.sample(sampler, a, θ, Xoshiro(9))
+            drawn, _ = NQSCore.sample(sampler, a, θ, Xoshiro(9))
 
             @test all(s in b.states for s in vec(drawn))
             @test all(sum(configurations(dof, s, nsites)) == 0 for s in vec(drawn))
             # It must actually explore the sector, not merely stay legal within it.
             @test length(unique(vec(drawn))) == length(b.states)
 
-            exact = NQSCore.probabilities(FullSumState(a, θ, BACKEND))
+            exact = NQSCore.probabilities(FullSumState(a, θ; backend=BACKEND))
             @test 0.5 * sum(abs.(empirical(drawn, b) .- exact)) < 0.02
         end
 
@@ -166,7 +206,7 @@ end
             # so the chain returns one configuration forever.
             sampler = MetropolisSampler(LocalRule(), starts;
                 n_chains=4, n_samples=500, burn_in=100, basis=b)
-            drawn = NQSCore.sample(sampler, a, θ, Xoshiro(10))
+            drawn, _ = NQSCore.sample(sampler, a, θ, Xoshiro(10))
             @test length(unique(vec(drawn))) == 1
         end
     end

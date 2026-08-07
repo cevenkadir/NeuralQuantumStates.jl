@@ -77,7 +77,7 @@ lat   = build(Hypercube([6], 1.0; periodic=[true]))
 model = build(TransverseFieldIsing(lat; J=1.0, h_x=1.0))
 
 ansatz = LuxAnsatz(RBM(6, 2), model.dof, 6; rng=Xoshiro(0))
-state  = FullSumState(ansatz, init_parameters(ansatz, Xoshiro(0)), AutoForwardDiff())
+state  = FullSumState(ansatz, init_parameters(ansatz, Xoshiro(0)); backend=AutoForwardDiff())
 
 log = run!(VMC(state, model.hamiltonian;
         preconditioner=StochasticReconfiguration(; diag_shift=1e-2),

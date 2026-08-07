@@ -55,6 +55,17 @@ end
 
 NQSCore.n_parameters(a::LuxAnsatz) = Lux.parameterlength(a.model)
 
+"""
+The full space implied by the ansatz's degrees of freedom.
+
+A network is defined on every configuration of its input space, so that is what a
+`FullSumState` built on one should sum over unless told otherwise. The default lives here rather
+than in `NQSCore`, which has no way to know what an arbitrary ansatz spans — and no reason to
+depend on a basis library in order to guess.
+"""
+NQSCore.default_basis(a::LuxAnsatz) =
+    SymBasis.Bases.basis(SymBasis.dof_object(a.dof), a.nsites)
+
 """Real element type to feed the network, matching whatever the parameters are made of."""
 _input_type(θ) = Float64
 _input_type(θ::NamedTuple) = isempty(θ) ? Float64 : _input_type(first(values(θ)))

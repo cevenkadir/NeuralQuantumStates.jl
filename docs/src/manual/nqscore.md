@@ -65,7 +65,29 @@ gradients:
   is silently wrong when the ansatz does not satisfy it, so it must be asked for explicitly.
 
 Whatever the parameterization, the gradient handed back always matches the *structure of the
-parameters*, so an optimizer never has to ask how the ansatz was parameterized.
+parameters*, so an optimizer never has to ask how the ansatz was parameterized —
+[`match_parameter_shape`](@ref) is what guarantees it.
+
+## The gradient does not build `O`
+
+The energy gradient is a single contraction of that matrix, `2 Re[⟨O_k^* ΔE⟩]`, and building the
+whole Jacobian in order to contract it is wasteful — on a reverse-mode backend it costs one pass
+*per sample*. [`expect_and_grad`](@ref) instead differentiates the scalar
+`L(θ) = 2 Σ_s Re[conj(c_s) log ψ(x_s)]` with `c_s = p_s (E_s - Ē)` held fixed, whose gradient is
+exactly the same thing. Every backend differentiates a scalar optimally, so this is one reverse
+pass regardless of the sample count.
+
+[`log_derivatives`](@ref) still builds `O` explicitly, because stochastic reconfiguration needs
+the matrix itself rather than just this one contraction of it; [`local_estimators`](@ref) is the
+entry point that returns it alongside the local energies and weights, all from one set of
+samples.
+
+## Sampling keeps its state
+
+[`sample`](@ref) returns `(samples, sampler_state)`, and an [`MCState`](@ref) carries that state
+across a parameter update even though it discards the samples. That is what lets a Markov chain
+resume instead of restarting, paying its burn-in once per run rather than once per optimization
+step. A sampler that draws independently returns `nothing` and ignores the argument.
 
 ## Backends
 
@@ -87,7 +109,7 @@ ops = local_operators(spec)
 H = OpSum([Op(2 .* ops.sz, i) * Op(2 .* ops.sz, mod1(i + 1, nsites)) for i in 1:nsites])
 
 a = LogStateVector(spec, nsites, b)
-vs = FullSumState(a, init_parameters(a, Xoshiro(0); scale=0.3), AutoForwardDiff())
+vs = FullSumState(a, init_parameters(a, Xoshiro(0); scale=0.3); backend=AutoForwardDiff())
 
 expect(vs, H)
 ```

@@ -54,6 +54,21 @@ Check two numbers before believing a result:
   means proposals too timid to explore. Both produce confident-looking error bars from samples
   that carry no information.
 
+## Chains stay warm between steps
+
+`NQSCore.sample` returns the drawn configurations **and** the sampler's own state:
+
+```julia
+drawn, state = NQSCore.sample(sampler, ansatz, θ, rng, previous_state)
+```
+
+For [`MetropolisSampler`](@ref) that state is the configuration each chain finished on. Handing
+it back resumes those chains and skips the burn-in, because they are already where burn-in would
+have taken them. An `MCState` does this automatically: a parameter update invalidates the
+samples but keeps the sampler state, so equilibration is paid once per run rather than once per
+optimization step. A parameter update moves the distribution only slightly, so the previous
+chain is still very nearly equilibrated for the new parameters.
+
 ## What is deliberately elsewhere
 
 Exact summation is a variational *state* (`NQSCore.FullSumState`), not a sampler, because it
@@ -89,5 +104,5 @@ expect(vs, H)
 Compare against the exact answer for the same parameters:
 
 ```@example nqssamplers
-expect(FullSumState(a, θ, AutoForwardDiff()), H)
+expect(FullSumState(a, θ; backend=AutoForwardDiff()), H)
 ```

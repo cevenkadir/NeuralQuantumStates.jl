@@ -4,6 +4,7 @@ authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
 version = "0.1.0-DEV"
 
 [deps]
+Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
 KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
@@ -24,6 +25,7 @@ ConnectedBasisConfigurations = {path = "../ConnectedBasisConfigurations"}
 NQSCore = {path = "../NQSCore"}
 
 [compat]
+Functors = "0.5"
 KrylovKit = "0.8, 0.9"
 NQSCore = "0.1"
 Optimisers = "0.4.6"

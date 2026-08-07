@@ -98,7 +98,7 @@ H = OpSum(vcat(
 ))
 
 a = LogStateVector(spec, nsites, b)
-vs = FullSumState(a, init_parameters(a, Xoshiro(11); scale=0.3), AutoForwardDiff())
+vs = FullSumState(a, init_parameters(a, Xoshiro(11); scale=0.3); backend=AutoForwardDiff())
 
 optimize!(vs, H, StochasticReconfiguration(; diag_shift=1e-2);
     iterations=600, learning_rate=0.05)

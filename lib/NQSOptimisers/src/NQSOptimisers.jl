@@ -52,12 +52,13 @@ history = optimize!(vs, H, sr; iterations=200, learning_rate=0.05)
 module NQSOptimisers
 
 using LinearAlgebra
+using Functors: fmap
 using KrylovKit: linsolve
 
 using NQSCore
 using NQSCore: AbstractPreconditioner, AbstractVariationalState, MCState, Stats
-using NQSCore: expect_and_grad, fmap, local_estimators, parameters, setparameters!
-using NQSCore: resample!, statistics, weighted_statistics
+using NQSCore: expect_and_grad, local_estimators, match_parameter_shape, parameters
+using NQSCore: precondition, resample!, setparameters!, statistics, weighted_statistics
 
 include("solvers.jl")
 include("sr.jl")

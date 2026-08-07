@@ -135,7 +135,7 @@ b6 = basis(model6)
 # The exact ansatz: one parameter per basis state. Useless for anything large, indispensable
 # for checking that the machinery is right, since it can represent any state.
 ansatz = LogStateVector(model6.dof, nsites, b6)
-state = FullSumState(ansatz, init_parameters(ansatz, Xoshiro(0); scale=0.1), AutoForwardDiff())
+state = FullSumState(ansatz, init_parameters(ansatz, Xoshiro(0); scale=0.1); backend=AutoForwardDiff())
 
 driver = VMC(state, model6.hamiltonian;
     preconditioner=StochasticReconfiguration(; diag_shift=1e-2),

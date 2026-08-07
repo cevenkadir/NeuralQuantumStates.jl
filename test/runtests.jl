@@ -214,7 +214,7 @@ end
         @test length(b.states) == 2^nsites
 
         a = LogStateVector(model.dof, nsites, b)
-        vs = FullSumState(a, init_parameters(a, Xoshiro(0); scale=0.1), AutoForwardDiff())
+        vs = FullSumState(a, init_parameters(a, Xoshiro(0); scale=0.1); backend=AutoForwardDiff())
 
         log = run!(VMC(vs, model.hamiltonian;
                 preconditioner=StochasticReconfiguration(; diag_shift=1e-2),
@@ -237,7 +237,7 @@ end
         # Genuinely compressed: far fewer parameters than the Hilbert space has dimensions.
         @test NQSCore.n_parameters(a) < length(b.states) ÷ 4
 
-        vs = FullSumState(a, init_parameters(a, Xoshiro(3)), AutoForwardDiff())
+        vs = FullSumState(a, init_parameters(a, Xoshiro(3)); backend=AutoForwardDiff())
         log = run!(VMC(vs, model.hamiltonian;
                 preconditioner=StochasticReconfiguration(; diag_shift=1e-3),
                 optimizer=Descent(0.05));
@@ -273,7 +273,7 @@ end
     a = LogStateVector(model.dof, nsites, b)
 
     @testset "EarlyStopping halts a converged run" begin
-        vs = FullSumState(a, init_parameters(a, Xoshiro(4); scale=0.1), AutoForwardDiff())
+        vs = FullSumState(a, init_parameters(a, Xoshiro(4); scale=0.1); backend=AutoForwardDiff())
         log = run!(VMC(vs, model.hamiltonian;
                 preconditioner=StochasticReconfiguration(; diag_shift=1e-3),
                 optimizer=Descent(0.1));
@@ -284,14 +284,14 @@ end
     @testset "InvalidLossStopping halts a diverged run" begin
         # A wildly oversized step makes the energy blow up; the run must stop rather than
         # propagate NaN through every parameter and report a finished run.
-        vs = FullSumState(a, init_parameters(a, Xoshiro(5); scale=0.1), AutoForwardDiff())
+        vs = FullSumState(a, init_parameters(a, Xoshiro(5); scale=0.1); backend=AutoForwardDiff())
         log = run!(VMC(vs, model.hamiltonian; optimizer=Descent(1e9));
             iterations=500, callbacks=(InvalidLossStopping(),))
         @test length(log) < 500
     end
 
     @testset "a user callback can stop the run" begin
-        vs = FullSumState(a, init_parameters(a, Xoshiro(6); scale=0.1), AutoForwardDiff())
+        vs = FullSumState(a, init_parameters(a, Xoshiro(6); scale=0.1); backend=AutoForwardDiff())
         seen = Int[]
         log = run!(VMC(vs, model.hamiltonian); iterations=100,
             callbacks=((it, stats, state) -> (push!(seen, it); it < 7),))

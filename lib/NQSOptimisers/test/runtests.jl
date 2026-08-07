@@ -38,7 +38,7 @@ end
 function fresh_state(dof, nsites; seed=11, scale=0.3)
     b = basis(dof_object(dof), nsites)
     a = LogStateVector(dof, nsites, b)
-    return FullSumState(a, init_parameters(a, Xoshiro(seed); scale=scale), BACKEND)
+    return FullSumState(a, init_parameters(a, Xoshiro(seed); scale=scale); backend=BACKEND)
 end
 
 @testset "NQSOptimisers.jl" begin

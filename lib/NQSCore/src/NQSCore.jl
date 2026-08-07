@@ -29,19 +29,20 @@ plays for SciML, or `ChainRulesCore` for the autodiff ecosystem.
 
 # Backends
 
-Automatic differentiation is reached through DifferentiationInterface.jl, and every concrete
-backend (Enzyme, Zygote, Reactant) as well as Lux itself is a weak dependency loaded through a
-package extension. `using NQSCore` on its own pulls in no autodiff and no GPU code.
+Automatic differentiation is reached through DifferentiationInterface.jl, so no concrete backend
+— ForwardDiff, Zygote, Enzyme, Reactant — is a dependency here: you load the one you want and
+pass it as `backend`. `using NQSCore` pulls in no autodiff, no neural-network library and no GPU
+code, and its test suite asserts as much.
 
 # Example
 
 ```julia
 using NQSCore, ConnectedBasisConfigurations, SymBasis, DifferentiationInterface, ForwardDiff
 
-dof, nsites = Spin(1 // 2), 4
-b = basis(dof_object(dof), nsites)
+spec, nsites = Spin(1 // 2), 4
+b = basis(dof_object(spec), nsites)
 
-a = LogStateVector(dof, nsites, b)
+a = LogStateVector(spec, nsites, b)
 vs = FullSumState(a, init_parameters(a); backend=AutoForwardDiff())
 
 expect(vs, H)                      # exact, zero error bar
@@ -55,11 +56,9 @@ using Random: AbstractRNG
 using Statistics: mean, var
 
 using ComponentArrays: ComponentArray, getaxes, getdata
-using Functors: fmap
 using DifferentiationInterface
 
 using ConnectedBasisConfigurations
-using SymBasis
 
 include("interface.jl")
 include("stats.jl")
@@ -71,14 +70,14 @@ include("states.jl")
 # interfaces
 export AbstractAnsatz, AbstractVariationalState, AbstractSampler, AbstractPreconditioner
 export log_amplitude, local_energy, parameters, setparameters!, ansatz, samples
-export expect, expect_and_grad, sample
+export expect, expect_and_grad, sample, precondition
 
 # statistics
 export Stats, statistics, weighted_statistics, exact_stats
 export integrated_autocorrelation, split_rhat
 
 # log-derivatives
-export log_derivatives, centered, flatten_parameters, fmap
+export log_derivatives, centered, flatten_parameters, match_parameter_shape
 
 # reference implementations
 export LogStateVector, init_parameters, n_parameters
@@ -86,6 +85,6 @@ export ExactSampler
 
 # variational states
 export FullSumState, MCState, probabilities, resample!, default_basis
-export local_estimators, sample_weights
+export local_estimators, sample_weights, sampler_state
 
 end # module NQSCore

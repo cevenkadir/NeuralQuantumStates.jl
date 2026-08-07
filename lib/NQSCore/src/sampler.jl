@@ -24,22 +24,23 @@ struct ExactSampler{B} <: AbstractSampler
     n_samples::Int
 end
 
-function sample(s::ExactSampler, a::AbstractAnsatz, θ, rng::AbstractRNG)
+"""
+Draws are independent, so there is nothing to carry between calls: the returned sampler state is
+always `nothing`, and any state handed in is ignored.
+"""
+function sample(s::ExactSampler, a::AbstractAnsatz, θ, rng::AbstractRNG, ::Any=nothing)
     states = s.basis.states
-    x = ConnectedBasisConfigurations.configurations(a.dof, states, a.nsites)
+    x = ConnectedBasisConfigurations.configurations(dof(a), states, n_sites(a))
     logψ = log_amplitude(a, θ, x)
 
-    logp = 2 .* real.(logψ)
-    logp .-= maximum(logp)              # shift before exponentiating, so nothing overflows
-    p = exp.(logp)
-    p ./= sum(p)
+    p = born_probabilities(logψ)
 
     # Inverse-CDF sampling over the enumerated distribution.
     cumulative = cumsum(p)
     out = similar(states, s.n_samples)
-    for i in 1:s.n_samples
+    @inbounds for i in 1:s.n_samples
         r = rand(rng)
         out[i] = states[searchsortedfirst(cumulative, r)]
     end
-    return out
+    return out, nothing
 end

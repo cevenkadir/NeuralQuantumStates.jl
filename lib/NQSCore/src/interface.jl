@@ -16,6 +16,30 @@ computing a Jacobian does.
 abstract type AbstractAnsatz end
 
 """
+    NQSCore.dof(ansatz)
+
+The SymBasis degree-of-freedom specification the ansatz is defined over.
+
+Defaults to the `dof` field, so an ansatz that stores one needs no method. Everything that
+builds configurations goes through this rather than reaching for the field directly, which is
+what lets an ansatz compute its degrees of freedom instead of storing them.
+
+Deliberately **not exported**, and neither is [`NQSCore.n_sites`](@ref): `n_sites` is a lattice's
+word as much as an ansatz's — `LatticeSpaceGroups` exports its own — and a package whose job is
+to be depended on should not make that choice for everyone downstream. Extend and call them
+qualified.
+"""
+dof(a::AbstractAnsatz) = a.dof
+
+"""
+    NQSCore.n_sites(ansatz) -> Int
+
+Number of sites the ansatz is defined on. Defaults to the `nsites` field; see
+[`NQSCore.dof`](@ref), which explains why neither is exported.
+"""
+n_sites(a::AbstractAnsatz) = a.nsites
+
+"""
     log_amplitude(ansatz, parameters, x) -> AbstractVector
 
 Log-amplitudes `log ψ(x)` for a batch of configurations.
@@ -128,9 +152,23 @@ meant for testing rather than for production use.
 abstract type AbstractSampler end
 
 """
-    sample(sampler, ansatz, parameters, rng) -> AbstractVector
+    sample(sampler, ansatz, parameters, rng, state=nothing) -> (samples, sampler_state)
 
-Draw configurations distributed according to `|ψ|²`, returned as packed states.
+Draw configurations distributed according to `|ψ|²`, returned as packed states together with
+the sampler's own state.
+
+`state` is the `sampler_state` returned by a previous call, or `nothing` to start from scratch.
+Handing it back is what lets a Markov chain **resume where it left off** instead of restarting
+and re-paying its burn-in on every optimization step. Over a run that is the difference between
+paying the equilibration cost once and paying it thousands of times — and consecutive steps
+differ by one small parameter update, so the previous chain is already very nearly equilibrated
+for the new parameters.
+
+A sampler that draws independently — [`ExactSampler`](@ref) is the one here — has nothing to
+carry between calls and returns `nothing`, which callers must accept.
+
+Samples may be returned as a `(steps, chains)` matrix; that shape survives into
+[`statistics`](@ref), which needs it for split-R̂ and for a between-chain error bar.
 """
 function sample end
 
@@ -144,6 +182,17 @@ reconfiguration, its kernel-trick variant, or plain identity.
 one without depending on that package.
 """
 abstract type AbstractPreconditioner end
+
+"""
+    precondition(preconditioner, state, operator) -> (Stats, update)
+
+Transform the raw energy gradient into the parameter update an optimizer should apply.
+
+Declared here, next to [`AbstractPreconditioner`](@ref), so that the type and its verb travel
+together: a driver written against this signature works with any implementation without
+depending on the package that provides it. `NQSOptimisers` supplies the methods.
+"""
+function precondition end
 
 """
     local_energy(state, operator[, states]) -> AbstractVector

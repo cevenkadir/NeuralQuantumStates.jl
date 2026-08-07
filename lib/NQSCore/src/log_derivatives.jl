@@ -117,6 +117,102 @@ function _log_derivatives(
 end
 
 """
+    match_parameter_shape(∇, θ) -> gradient
+
+Put a raw gradient into the same shape as the parameters, so that `θ .- η .* ∇` is meaningful.
+
+For complex parameters differentiated non-holomorphically, [`log_derivatives`](@ref) returns
+`2n` columns — `∂/∂θ_re` followed by `∂/∂θ_im` — and a gradient built from it inherits that
+length. Descending in the real parameterization means `θ_re -= η g_re` and `θ_im -= η g_im`
+simultaneously, which is exactly `θ -= η (g_re + i g_im)`. Recombining here rather than at the
+call site keeps the promise that a gradient always matches the parameters it belongs to,
+whatever the parameterization: an optimizer should never have to ask how the ansatz was
+parameterized.
+"""
+function match_parameter_shape(∇::AbstractVector, θ)
+    flat, restore = flatten_parameters(θ)
+    return _match_parameter_shape(∇, flat, restore)
+end
+
+function _match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore)
+    n = length(flat)
+    if eltype(flat) <: Complex && length(∇) == 2n
+        return restore(@views ∇[1:n] .+ im .* ∇[(n+1):(2n)])
+    end
+    return restore(∇)
+end
+
+"""
+    energy_gradient(ansatz, θ, x, E_loc, weights; backend) -> gradient
+
+The variational energy gradient `2 Re[⟨O_k^* ΔE⟩]`, computed **without ever forming `O`**.
+
+The gradient is a single contraction of the log-derivative matrix against the centered local
+energies, and a contraction of a Jacobian is a job for one differentiation pass rather than for
+`n_samples` of them. Writing
+
+```math
+L(θ) = 2 \\sum_s \\mathrm{Re}[\\overline{c_s} \\, \\log ψ(x_s)],
+\\qquad c_s = p_s (E_s - \\bar{E})
+```
+
+makes that explicit: `c` does not depend on `θ`, so `∇L` *is* the energy gradient, and `L` is a
+scalar. Differentiating a scalar is the one thing every backend does optimally — a reverse-mode
+backend needs exactly one pass regardless of how many samples there are, where building the
+full Jacobian would have cost it one pass per sample.
+
+[`log_derivatives`](@ref) still builds `O` explicitly, because stochastic reconfiguration needs
+the matrix itself and not just this one contraction of it.
+"""
+function energy_gradient(
+    ansatz::AbstractAnsatz, θ, x::AbstractMatrix, E::AbstractVector,
+    weights::Union{Nothing,AbstractVector}; backend
+)
+    flat, restore = flatten_parameters(θ)
+    c = _gradient_cotangent(E, weights)
+    ∇ = _energy_gradient(ansatz, flat, restore, x, c, backend)
+    return _match_parameter_shape(∇, flat, restore)
+end
+
+"""
+The cotangent `c_s = p_s (E_s - Ē)`.
+
+Subtracting the mean is not cosmetic: without it the estimator has a non-vanishing variance
+even at an exact eigenstate, where every local energy is the same number.
+"""
+function _gradient_cotangent(E::AbstractVector, weights::Union{Nothing,AbstractVector})
+    p = weights === nothing ? fill(1 / length(E), length(E)) : weights ./ sum(weights)
+    Ē = sum(p .* E)
+    return p .* (E .- Ē)
+end
+
+"""Real parameters: differentiate the scalar loss directly."""
+function _energy_gradient(ansatz, flat::AbstractVector{<:Real}, restore, x, c, backend)
+    loss(p) = _gradient_loss(ansatz, restore(p), x, c)
+    return DifferentiationInterface.gradient(loss, backend, flat)
+end
+
+"""
+Complex parameters: differentiate with respect to real and imaginary parts as `2n` independent
+real parameters, matching the non-holomorphic convention of [`log_derivatives`](@ref).
+"""
+function _energy_gradient(ansatz, flat::AbstractVector{<:Complex}, restore, x, c, backend)
+    n = length(flat)
+    split = vcat(real.(flat), imag.(flat))
+    function loss(v)
+        p = @views v[1:n] .+ im .* v[(n+1):(2n)]
+        return _gradient_loss(ansatz, restore(p), x, c)
+    end
+    return DifferentiationInterface.gradient(loss, backend, split)
+end
+
+"""`L = 2 Σ_s Re[conj(c_s) log ψ(x_s)]`, the scalar whose gradient is the energy gradient."""
+function _gradient_loss(ansatz, θ, x, c)
+    ψ = log_amplitude(ansatz, θ, x)
+    return 2 * sum(real.(conj.(c) .* ψ))
+end
+
+"""
     centered(O, weights=nothing) -> Matrix
 
 Subtract the (optionally weighted) mean of each column of `O`.

@@ -137,7 +137,7 @@ The stochastic-reconfiguration update direction, together with the energy it was
 `θ .- η .* update` (or `fmap` over a nested container). Both returned values come from a single
 set of samples.
 """
-function precondition(
+function NQSCore.precondition(
     sr::StochasticReconfiguration, vs::AbstractVariationalState, operator
 )
     est = local_estimators(vs, operator; holomorphic=sr.holomorphic)
@@ -159,7 +159,7 @@ function precondition(
 
     stats = est.weights === nothing ?
             statistics(est.E) : weighted_statistics(est.E, est.weights)
-    return stats, NQSCore._match_parameter_shape(δ, parameters(vs))
+    return stats, match_parameter_shape(δ, parameters(vs))
 end
 
 """
@@ -172,7 +172,7 @@ uniformly, and so that the two can be compared under otherwise identical conditi
 """
 struct Identity <: AbstractPreconditioner end
 
-function precondition(::Identity, vs::AbstractVariationalState, operator)
+function NQSCore.precondition(::Identity, vs::AbstractVariationalState, operator)
     return expect_and_grad(vs, operator)
 end
 

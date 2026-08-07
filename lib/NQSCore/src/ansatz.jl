@@ -19,15 +19,19 @@ is. That makes it the natural test of [`log_derivatives`](@ref) itself.
 - `nsites::Int`: Number of sites.
 - `basis`: The basis whose states the parameters are indexed by.
 """
-struct LogStateVector{D,B} <: AbstractAnsatz
+struct LogStateVector{D,B,K} <: AbstractAnsatz
     dof::D
     nsites::Int
     basis::B
-    index::Dict{Any,Int}
+    index::Dict{K,Int}
 
     function LogStateVector(dof::D, nsites::Integer, basis::B) where {D,B}
-        index = Dict{Any,Int}(s => i for (i, s) in pairs(basis.states))
-        return new{D,B}(dof, Int(nsites), basis, index)
+        # The key type is the basis's own packed-state type rather than `Any`. Every lookup in
+        # `log_amplitude` goes through this dictionary once per configuration per batch, and an
+        # abstract key type would box each one and dispatch `hash`/`isequal` dynamically.
+        K = eltype(basis.states)
+        index = Dict{K,Int}(s => i for (i, s) in pairs(basis.states))
+        return new{D,B,K}(dof, Int(nsites), basis, index)
     end
 end
 
@@ -36,9 +40,11 @@ n_parameters(a::LogStateVector) = length(a.basis.states)
 
 function log_amplitude(a::LogStateVector, θ, x::AbstractMatrix)
     out = similar(θ, size(x, 2))
-    for j in axes(x, 2)
-        s = ConnectedBasisConfigurations.packed(a.dof, @view x[:, j])
-        i = get(a.index, s, 0)
+    index = a.index
+    spec = a.dof
+    @inbounds for j in axes(x, 2)
+        s = ConnectedBasisConfigurations.packed(spec, @view x[:, j])
+        i = get(index, s, 0)
         i == 0 && throw(ArgumentError(
             "configuration $(collect(x[:, j])) is not in this ansatz's basis"
         ))
