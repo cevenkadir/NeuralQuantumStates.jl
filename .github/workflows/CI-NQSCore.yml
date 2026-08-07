@@ -27,7 +27,9 @@ permissions:
   actions: write
   contents: read
 jobs:
-  test:
+  # The job id prefixes every check this workflow reports -- `NQSCore / Julia ...` --
+  # which is what keeps the seven workflows' checks distinguishable from each other.
+  NQSCore:
     uses: ./.github/workflows/ci-package.yml
     with:
       project: lib/NQSCore

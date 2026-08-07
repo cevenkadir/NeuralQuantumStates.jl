@@ -17,7 +17,9 @@ permissions:
   actions: write
   contents: read
 jobs:
-  test:
+  # The job id prefixes every check this workflow reports -- `NeuralQuantumStates / Julia ...` --
+  # which is what keeps the seven workflows' checks distinguishable from each other.
+  NeuralQuantumStates:
     # Unlike the lib/* packages this one has no path filter: the umbrella exercises the whole
     # stack together, so any change to the repository is a reason to run it.
     uses: ./.github/workflows/ci-package.yml

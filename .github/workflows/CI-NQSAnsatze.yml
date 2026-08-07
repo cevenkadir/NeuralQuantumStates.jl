@@ -31,7 +31,9 @@ permissions:
   actions: write
   contents: read
 jobs:
-  test:
+  # The job id prefixes every check this workflow reports -- `NQSAnsatze / Julia ...` --
+  # which is what keeps the seven workflows' checks distinguishable from each other.
+  NQSAnsatze:
     uses: ./.github/workflows/ci-package.yml
     with:
       project: lib/NQSAnsatze
