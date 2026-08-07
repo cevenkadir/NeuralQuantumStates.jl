@@ -86,7 +86,7 @@ left out rather than shipped half-done.
 ## Quick example
 
 ```@example nqsoptimisers
-using NQSOptimisers, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
+using NQSOptimisers, NQSCore, ConnectedBasisConfigurations, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random, LinearAlgebra
 
 spec, nsites = Spin(1 // 2), 4

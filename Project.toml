@@ -8,10 +8,10 @@ version = "0.1.0-dev"
 #
 # This is the one package that pulls in the whole stack, Lux included -- that is its job.
 # Anyone who needs only lattice geometry or only the operator kernel should depend on
-# LatticeSpaceGroups or ConnectedConfigs directly and pay for neither.
+# LatticeSpaceGroups or ConnectedBasisConfigurations directly and pay for neither.
 
 [deps]
-ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
 LatticeSpaceGroups = "b58f0687-8695-4e57-9eeb-fda788602521"
 NQSAnsatze = "0fa8ea8c-8554-40bd-8978-b36539e7137d"
 NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
@@ -25,7 +25,7 @@ SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
 # Julia 1.11+ resolves path sources declared here, so the monorepo works without every
 # developer having to `Pkg.develop` each `lib/` package by hand.
 [sources]
-ConnectedConfigs = {path = "lib/ConnectedConfigs"}
+ConnectedBasisConfigurations = {path = "lib/ConnectedBasisConfigurations"}
 LatticeSpaceGroups = {path = "lib/LatticeSpaceGroups"}
 NQSAnsatze = {path = "lib/NQSAnsatze"}
 NQSCore = {path = "lib/NQSCore"}
@@ -33,7 +33,7 @@ NQSOptimisers = {path = "lib/NQSOptimisers"}
 NQSSamplers = {path = "lib/NQSSamplers"}
 
 [compat]
-ConnectedConfigs = "0.1"
+ConnectedBasisConfigurations = "0.1"
 LatticeSpaceGroups = "0.1"
 NQSAnsatze = "0.1"
 NQSCore = "0.1"

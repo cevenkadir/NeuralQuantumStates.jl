@@ -10,9 +10,9 @@ on:
 
 # This repository publishes several Documenter sites to the same `gh-pages` branch: the
 # umbrella at the root, and each separately registered package under its own directory
-# (`LatticeSpaceGroups/`, `ConnectedConfigs/`), so that each has its own version selector and
-# its own tags. Their content never overlaps -- Documenter confines a deployment to its
-# `dirname` -- but each one clones, commits and pushes to the same branch, so two of them
+# (`LatticeSpaceGroups/`, `ConnectedBasisConfigurations/`), so that each has its own version
+# selector and its own tags. Their content never overlaps -- Documenter confines a deployment
+# to its `dirname` -- but each one clones, commits and pushes to the same branch, so two of them
 # running at once would lose a push to a non-fast-forward rejection.
 #
 # Cancelling is off for the same reason: a job interrupted mid-push is worse than a slow queue.
@@ -84,8 +84,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
 
-  connectedconfigs:
-    name: ConnectedConfigs.jl
+  connectedbasisconfigurations:
+    name: ConnectedBasisConfigurations.jl
     # Next in the same single-file queue: only one job may push to gh-pages at a time.
     needs: latticespacegroups
     runs-on: ubuntu-latest
@@ -102,12 +102,12 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - name: Install dependencies
-        shell: julia --color=yes --project=lib/ConnectedConfigs/docs {0}
+        shell: julia --color=yes --project=lib/ConnectedBasisConfigurations/docs {0}
         run: |
           using Pkg
           Pkg.instantiate()
       - name: Build and deploy
-        run: julia --color=yes --project=lib/ConnectedConfigs/docs lib/ConnectedConfigs/docs/make.jl
+        run: julia --color=yes --project=lib/ConnectedBasisConfigurations/docs lib/ConnectedBasisConfigurations/docs/make.jl
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}

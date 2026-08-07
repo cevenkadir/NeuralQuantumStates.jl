@@ -16,7 +16,7 @@ diagonalization:
 | [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases |
 | [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | `Op`/`OpChain`/`OpSum`, sparse and dense conversion, fermionic sites |
 | `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need |
-| `ConnectedConfigs` | The batched local-energy kernel |
+| `ConnectedBasisConfigurations` | The batched local-energy kernel |
 
 | Package | Role |
 |---|---|
@@ -59,8 +59,8 @@ Three behavioural differences are deliberate: connected configurations are padde
 **zero** matrix element rather than `missing`; the degree-of-freedom axis is always **first**
 (the old code put it last for Ising and first for Bose-Hubbard); and two terms reaching the
 same configuration now produce two rows rather than one summed row, which every consumer sums
-over anyway. See `ConnectedConfigs` for all three, and `compile` for how to stop re-flattening
-a Hamiltonian on every call.
+over anyway. See `ConnectedBasisConfigurations` for all three, and `compile` for how to stop
+re-flattening a Hamiltonian on every call.
 """
 module NeuralQuantumStates
 
@@ -68,7 +68,7 @@ using Reexport
 
 # Tier 1: no machine-learning dependencies.
 @reexport using LatticeSpaceGroups
-@reexport using ConnectedConfigs
+@reexport using ConnectedBasisConfigurations
 @reexport using OperatorAlgebra
 @reexport using SymBasis
 

@@ -70,7 +70,7 @@ SymBasis.Bases.basis(model::Model, symmetry) =
     The couplings multiply ``\\sigma`` rather than ``S = \\sigma/2``, matching the pre-split
     package. `σᶻ` is `diag(-1, +1)`: digit 0 is spin **down**, following SymBasis's
     `ldof = (-1//2, 1//2)`. This is the negative of OperatorAlgebra's `PAULI_Z` constant — see
-    `ConnectedConfigs.local_operators` for why that distinction matters.
+    `ConnectedBasisConfigurations.local_operators` for why that distinction matters.
 """
 struct TransverseFieldIsing{L,T<:Real} <: AbstractModelSpec
     lattice::L

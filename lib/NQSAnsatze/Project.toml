@@ -4,7 +4,7 @@ version = "0.1.0-DEV"
 authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
 
 [deps]
-ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
 NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
@@ -22,12 +22,12 @@ LatticeSpaceGroups = "b58f0687-8695-4e57-9eeb-fda788602521"
 NQSAnsatzeLatticeSpaceGroupsExt = "LatticeSpaceGroups"
 
 [sources]
-ConnectedConfigs = {path = "../ConnectedConfigs"}
+ConnectedBasisConfigurations = {path = "../ConnectedBasisConfigurations"}
 LatticeSpaceGroups = {path = "../LatticeSpaceGroups"}
 NQSCore = {path = "../NQSCore"}
 
 [compat]
-ConnectedConfigs = "0.1"
+ConnectedBasisConfigurations = "0.1"
 LatticeSpaceGroups = "0.1"
 Lux = "1.16"
 NQSCore = "0.1"

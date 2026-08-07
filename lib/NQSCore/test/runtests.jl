@@ -1,6 +1,6 @@
 using NQSCore
 
-using ConnectedConfigs
+using ConnectedBasisConfigurations
 using DifferentiationInterface
 using ForwardDiff
 using LinearAlgebra

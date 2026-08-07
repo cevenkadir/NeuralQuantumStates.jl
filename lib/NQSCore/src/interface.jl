@@ -21,9 +21,9 @@ abstract type AbstractAnsatz end
 Log-amplitudes `log ψ(x)` for a batch of configurations.
 
 `x` is a `(nsites, batch)` array of **physical local values** — magnetic quantum numbers for a
-spin, occupation numbers for a boson — as produced by `ConnectedConfigs.configurations`. The
-result is a length-`batch` vector, generally complex: the real part carries the log-modulus and
-the imaginary part the phase.
+spin, occupation numbers for a boson — as produced by
+`ConnectedBasisConfigurations.configurations`. The result is a length-`batch` vector, generally
+complex: the real part carries the log-modulus and the imaginary part the phase.
 
 Returning the *logarithm* rather than the amplitude is what makes this numerically usable at
 all: amplitudes underflow catastrophically for any interesting system size, whereas the

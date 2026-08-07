@@ -1,5 +1,5 @@
 [deps]
-ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
 DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
@@ -16,7 +16,7 @@ SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
 # The lib/* packages are resolved from the working tree, so the docs always describe the
 # code in this checkout rather than a released version of it.
 [sources]
-ConnectedConfigs = {path = "../lib/ConnectedConfigs"}
+ConnectedBasisConfigurations = {path = "../lib/ConnectedBasisConfigurations"}
 LatticeSpaceGroups = {path = "../lib/LatticeSpaceGroups"}
 NQSAnsatze = {path = "../lib/NQSAnsatze"}
 NQSCore = {path = "../lib/NQSCore"}

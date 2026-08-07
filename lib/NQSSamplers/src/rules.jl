@@ -100,7 +100,7 @@ struct HamiltonianRule{O} <: AbstractRule
 end
 
 function HamiltonianRule(operator)
-    compiled = ConnectedConfigs.compile(operator)
+    compiled = ConnectedBasisConfigurations.compile(operator)
     return HamiltonianRule{typeof(compiled)}(compiled)
 end
 

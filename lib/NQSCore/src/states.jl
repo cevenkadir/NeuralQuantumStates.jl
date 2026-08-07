@@ -9,7 +9,7 @@ kernel and the samplers work in, numeric arrays are what an ansatz consumes.
 """
 function log_amplitudes(vs::AbstractVariationalState, states::AbstractArray)
     a = ansatz(vs)
-    x = ConnectedConfigs.configurations(a.dof, vec(states), a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, vec(states), a.nsites)
     return log_amplitude(a, parameters(vs), x)
 end
 
@@ -33,7 +33,7 @@ function local_energy(vs::AbstractVariationalState, operator, states::AbstractAr
 end
 
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractVector)
-    res = ConnectedConfigs.connected_padded(operator, states)
+    res = ConnectedBasisConfigurations.connected_padded(operator, states)
     a = ansatz(vs)
 
     logψ_s = log_amplitudes(vs, states)
@@ -78,7 +78,7 @@ function local_estimators(vs::AbstractVariationalState, operator; holomorphic::B
     E = local_energy(vs, operator, states)
 
     a = ansatz(vs)
-    x = ConnectedConfigs.configurations(a.dof, vec(states), a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, vec(states), a.nsites)
     O = log_derivatives(a, parameters(vs), x; backend=vs.backend, holomorphic=holomorphic)
 
     return (; E=vec(E), O=O, weights=sample_weights(vs))
@@ -211,7 +211,7 @@ function expect_and_grad(vs::FullSumState, operator)
     p = probabilities(vs)
 
     a = ansatz(vs)
-    x = ConnectedConfigs.configurations(a.dof, states, a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, states, a.nsites)
     O = log_derivatives(a, parameters(vs), x; backend=vs.backend)
 
     return weighted_statistics(E, p), _match_parameter_shape(_gradient(O, E, p), parameters(vs))
@@ -283,7 +283,7 @@ function expect_and_grad(vs::MCState, operator)
     E = local_energy(vs, operator, states)
 
     a = ansatz(vs)
-    x = ConnectedConfigs.configurations(a.dof, vec(states), a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, vec(states), a.nsites)
     O = log_derivatives(a, parameters(vs), x; backend=vs.backend)
 
     return statistics(E), _match_parameter_shape(_gradient(O, vec(E), nothing), parameters(vs))

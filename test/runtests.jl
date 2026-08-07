@@ -7,9 +7,11 @@ using Test
 # been deleted (recover it with `git show 0774c25:archive/pre-split/`). Reproducing them via the new
 # stack — lattice bonds, model definition, and local-energy kernel together — is what licensed
 # that deletion, and this is the end-to-end statement of it.
-# The data lives inside ConnectedConfigs so that package stays self-contained when published;
-# the umbrella is only ever built from this repository, so reaching into `lib/` is safe here.
-const GOLDEN_DIR = joinpath(@__DIR__, "..", "lib", "ConnectedConfigs", "test", "golden")
+# The data lives inside ConnectedBasisConfigurations so that package stays self-contained when
+# published; the umbrella is only ever built from this repository, so reaching into `lib/` is
+# safe here.
+const GOLDEN_DIR =
+    joinpath(@__DIR__, "..", "lib", "ConnectedBasisConfigurations", "test", "golden")
 include(joinpath(GOLDEN_DIR, "tfi_chain8.jl"))
 include(joinpath(GOLDEN_DIR, "bhm_chain16.jl"))
 
@@ -18,8 +20,8 @@ include(joinpath(GOLDEN_DIR, "bhm_chain16.jl"))
 
 Reduce pre-split `(configs, mels)` to configuration => total matrix element, skipping the
 `missing` padding, summing duplicates, and dropping exact zeros. See
-`lib/ConnectedConfigs/test/golden.jl` for why the comparison is made this way rather than
-element-wise.
+`lib/ConnectedBasisConfigurations/test/golden.jl` for why the comparison is made this way
+rather than element-wise.
 """
 function reference_dict(configs::AbstractMatrix, mels::AbstractVector)
     out = Dict{Vector{eltype(configs)},Float64}()
@@ -62,7 +64,7 @@ end
     @testset "the stack is re-exported" begin
         # A user should need only `using NeuralQuantumStates` to reach the whole ecosystem.
         @test isdefined(@__MODULE__, :Hypercube)          # LatticeSpaceGroups
-        @test isdefined(@__MODULE__, :connected_padded)   # ConnectedConfigs
+        @test isdefined(@__MODULE__, :connected_padded)   # ConnectedBasisConfigurations
         @test isdefined(@__MODULE__, :OpSum)              # OperatorAlgebra
         @test isdefined(@__MODULE__, :dof_object)         # SymBasis
     end
@@ -71,8 +73,8 @@ end
         # The umbrella deliberately pulls in the whole stack, Lux included -- that is what an
         # umbrella is for. The dependency-weight property belongs to the Tier 1 packages, and
         # is asserted in *their* test suites: `using LatticeSpaceGroups` or
-        # `using ConnectedConfigs` must load none of this. Repeating that assertion here would
-        # be testing the wrong package.
+        # `using ConnectedBasisConfigurations` must load none of this. Repeating that assertion
+        # here would be testing the wrong package.
         loaded = Set(m.name for m in keys(Base.loaded_modules))
         @test "Lux" in loaded                       # via NQSAnsatze
 

@@ -56,7 +56,7 @@ once `|Re z|` passes about 710 — which an RBM reaches routinely as its weights
 ## Quick example
 
 ```@example nqsansatze
-using NQSAnsatze, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
+using NQSAnsatze, NQSCore, ConnectedBasisConfigurations, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
 spec, nsites = Spin(1 // 2), 10

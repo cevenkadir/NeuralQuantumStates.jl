@@ -1,6 +1,6 @@
 using NQSAnsatze
 
-using ConnectedConfigs
+using ConnectedBasisConfigurations
 using DifferentiationInterface
 using LatticeSpaceGroups
 using LinearAlgebra

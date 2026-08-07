@@ -93,7 +93,7 @@ connected_padded(compiled, b.states[1:3]).counts
 
 The batch axis follows the input array, so a `(steps, chains)` block of Monte Carlo samples
 goes in without reshaping. See the
-[ConnectedConfigs manual](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/connected_states/)
+[ConnectedBasisConfigurations manual](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedBasisConfigurations/dev/manual/connected_states/)
 for the full contract.
 
 ## Symmetry sectors

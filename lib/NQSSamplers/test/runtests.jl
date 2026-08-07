@@ -1,6 +1,6 @@
 using NQSSamplers
 
-using ConnectedConfigs
+using ConnectedBasisConfigurations
 using DifferentiationInterface
 using ForwardDiff
 using LinearAlgebra

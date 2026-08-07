@@ -20,7 +20,7 @@ Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
 # NQSOptimisersBatchSolveExt = "BatchSolve"
 
 [sources]
-ConnectedConfigs = {path = "../ConnectedConfigs"}
+ConnectedBasisConfigurations = {path = "../ConnectedBasisConfigurations"}
 NQSCore = {path = "../NQSCore"}
 
 [compat]
@@ -30,7 +30,7 @@ Optimisers = "0.4.6"
 julia = "1.11"
 
 [extras]
-ConnectedConfigs = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
 DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
@@ -39,4 +39,4 @@ SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ConnectedConfigs", "DifferentiationInterface", "ForwardDiff", "OperatorAlgebra", "Random", "SymBasis", "Test"]
+test = ["ConnectedBasisConfigurations", "DifferentiationInterface", "ForwardDiff", "OperatorAlgebra", "Random", "SymBasis", "Test"]

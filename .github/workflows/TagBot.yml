@@ -34,12 +34,12 @@ jobs:
     # `JuliaTagBot` comment, so a failure in one can take the others with it. Add a step per
     # package as each one is registered.
     steps:
-      - name: ConnectedConfigs
+      - name: ConnectedBasisConfigurations
         uses: JuliaRegistries/TagBot@v1
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           ssh: ${{ secrets.DOCUMENTER_KEY }}
-          subdir: lib/ConnectedConfigs
+          subdir: lib/ConnectedBasisConfigurations
       - name: LatticeSpaceGroups
         uses: JuliaRegistries/TagBot@v1
         with:

@@ -11,9 +11,9 @@ DocMeta.setdocmeta!(
 )
 
 # One site for the ecosystem, minus the separately registered packages. LatticeSpaceGroups and
-# ConnectedConfigs each carry their own site under their own directory on the same `gh-pages`
-# branch; the rest are internal and documented here. Listing every module means `checkdocs`
-# covers them all in the build that actually runs.
+# ConnectedBasisConfigurations each carry their own site under their own directory on the same
+# `gh-pages` branch; the rest are internal and documented here. Listing every module means
+# `checkdocs` covers them all in the build that actually runs.
 const ECOSYSTEM = [
     NeuralQuantumStates,
     NQSCore,
@@ -52,7 +52,7 @@ makedocs(;
             # These two packages carry their own sites; the pages here are short chapters
             # that link into them, so a reader browsing the Manual sees the whole stack.
             "Lattices and symmetries"=>"manual/latticespacegroups.md",
-            "Connected configurations"=>"manual/connectedconfigs.md",
+            "Connected basis configurations"=>"manual/connectedbasisconfigurations.md",
             "Variational states"=>"manual/nqscore.md",
             "Ansätze"=>"manual/nqsansatze.md",
             "Samplers"=>"manual/nqssamplers.md",

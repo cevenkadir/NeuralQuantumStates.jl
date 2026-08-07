@@ -54,7 +54,7 @@ end
 
 """Log of `|ψ|²` for a batch of packed configurations."""
 function _log_prob(a::AbstractAnsatz, θ, states::AbstractVector)
-    x = ConnectedConfigs.configurations(a.dof, states, a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, states, a.nsites)
     return 2 .* real.(log_amplitude(a, θ, x))
 end
 
@@ -138,7 +138,7 @@ A uniformly random configuration, for starting a chain.
 """
 function random_configuration(dof, nsites::Integer, rng::AbstractRNG)
     values = local_values(dof)
-    return ConnectedConfigs.packed(dof, [rand(rng, values) for _ in 1:nsites])
+    return ConnectedBasisConfigurations.packed(dof, [rand(rng, values) for _ in 1:nsites])
 end
 
 """

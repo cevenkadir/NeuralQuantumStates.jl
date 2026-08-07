@@ -4,17 +4,17 @@ on:
     branches:
       - main
     tags: ['*']
-    # Also triggered by its upstream lib packages (ConnectedConfigs): a change there
+    # Also triggered by its upstream lib packages (ConnectedBasisConfigurations): a change there
     # can break this one, and a path filter that ignored them would hide that.
     paths:
       - 'lib/NQSCore/**'
-      - 'lib/ConnectedConfigs/**'
+      - 'lib/ConnectedBasisConfigurations/**'
       - '.github/workflows/CI-NQSCore.yml'
       - '.github/workflows/ci-package.yml'
   pull_request:
     paths:
       - 'lib/NQSCore/**'
-      - 'lib/ConnectedConfigs/**'
+      - 'lib/ConnectedBasisConfigurations/**'
       - '.github/workflows/CI-NQSCore.yml'
       - '.github/workflows/ci-package.yml'
   workflow_dispatch:

@@ -36,7 +36,7 @@ diagonalization.
 | [SymBasis.jl](https://github.com/cevenkadir/SymBasis.jl) | States, degrees of freedom, symmetry groups, symmetry-reduced bases |
 | [OperatorAlgebra.jl](https://github.com/h-mnzlr/OperatorAlgebra.jl) | Operator algebra: `Op`, `OpChain`, `OpSum`, sparse/dense conversion, fermionic sites |
 | `LatticeSpaceGroups` | Lattice geometry, bonds, and the site permutations symmetry groups need |
-| `ConnectedConfigs` | The batched local-energy kernel: connected configurations and their matrix elements |
+| `ConnectedBasisConfigurations` | The batched local-energy kernel: connected basis configurations and their matrix elements |
 
 **Tier 2 — the neural-network stack.**
 
@@ -62,11 +62,11 @@ import Pkg; Pkg.add(url="https://github.com/cevenkadir/NeuralQuantumStates.jl")
 See [Basics](@ref) for a worked example that builds a lattice, a Hilbert space, and a
 Hamiltonian, and then inspects its connected basis configurations.
 
-`LatticeSpaceGroups` and `ConnectedConfigs` are registered as packages in their own right and
-carry their own documentation sites. The Manual has a chapter for each —
+`LatticeSpaceGroups` and `ConnectedBasisConfigurations` are registered as packages in their own
+right and carry their own documentation sites. The Manual has a chapter for each —
 [Lattices and symmetries](manual/latticespacegroups.md) and
-[Connected configurations](manual/connectedconfigs.md) — covering what you need to use them
-from here, and linking on to the full sites for the rest.
+[Connected basis configurations](manual/connectedbasisconfigurations.md) — covering what you
+need to use them from here, and linking on to the full sites for the rest.
 
 ## Bug reports and feature requests
 

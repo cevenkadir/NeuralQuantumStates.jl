@@ -37,7 +37,7 @@ n_parameters(a::LogStateVector) = length(a.basis.states)
 function log_amplitude(a::LogStateVector, θ, x::AbstractMatrix)
     out = similar(θ, size(x, 2))
     for j in axes(x, 2)
-        s = ConnectedConfigs.packed(a.dof, @view x[:, j])
+        s = ConnectedBasisConfigurations.packed(a.dof, @view x[:, j])
         i = get(a.index, s, 0)
         i == 0 && throw(ArgumentError(
             "configuration $(collect(x[:, j])) is not in this ansatz's basis"

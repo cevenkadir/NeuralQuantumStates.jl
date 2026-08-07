@@ -77,7 +77,7 @@ packages is a dependency here; load the one you want and pass it.
 ## Quick example
 
 ```@example nqscore
-using NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
+using NQSCore, ConnectedBasisConfigurations, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
 spec, nsites = Spin(1 // 2), 4

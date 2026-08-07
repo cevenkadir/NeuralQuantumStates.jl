@@ -4,12 +4,13 @@ on:
     branches:
       - main
     tags: ['*']
-    # Also triggered by its upstream lib packages (NQSCore, ConnectedConfigs, LatticeSpaceGroups): a change there
-    # can break this one, and a path filter that ignored them would hide that.
+    # Also triggered by its upstream lib packages (NQSCore, ConnectedBasisConfigurations,
+    # LatticeSpaceGroups): a change there can break this one, and a path filter that ignored
+    # them would hide that.
     paths:
       - 'lib/NQSAnsatze/**'
       - 'lib/NQSCore/**'
-      - 'lib/ConnectedConfigs/**'
+      - 'lib/ConnectedBasisConfigurations/**'
       - 'lib/LatticeSpaceGroups/**'
       - '.github/workflows/CI-NQSAnsatze.yml'
       - '.github/workflows/ci-package.yml'
@@ -17,7 +18,7 @@ on:
     paths:
       - 'lib/NQSAnsatze/**'
       - 'lib/NQSCore/**'
-      - 'lib/ConnectedConfigs/**'
+      - 'lib/ConnectedBasisConfigurations/**'
       - 'lib/LatticeSpaceGroups/**'
       - '.github/workflows/CI-NQSAnsatze.yml'
       - '.github/workflows/ci-package.yml'

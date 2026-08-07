@@ -36,7 +36,7 @@ package extension. `using NQSCore` on its own pulls in no autodiff and no GPU co
 # Example
 
 ```julia
-using NQSCore, ConnectedConfigs, SymBasis, DifferentiationInterface, ForwardDiff
+using NQSCore, ConnectedBasisConfigurations, SymBasis, DifferentiationInterface, ForwardDiff
 
 dof, nsites = Spin(1 // 2), 4
 b = basis(dof_object(dof), nsites)
@@ -58,7 +58,7 @@ using ComponentArrays: ComponentArray, getaxes, getdata
 using Functors: fmap
 using DifferentiationInterface
 
-using ConnectedConfigs
+using ConnectedBasisConfigurations
 using SymBasis
 
 include("interface.jl")

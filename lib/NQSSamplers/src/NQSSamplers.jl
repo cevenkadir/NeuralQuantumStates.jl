@@ -49,8 +49,8 @@ using Random: AbstractRNG, rand
 using NQSCore
 using NQSCore: AbstractAnsatz, AbstractSampler, log_amplitude
 
-using ConnectedConfigs
-using ConnectedConfigs: connected, local_dimension, local_values
+using ConnectedBasisConfigurations
+using ConnectedBasisConfigurations: connected, local_dimension, local_values
 using SymBasis.DigitBase: read, write
 
 include("rules.jl")

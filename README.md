@@ -50,7 +50,7 @@ sparse and dense conversion, and fermionic sites. Everything below lives in this
 | Package | Role | Stable Version | Total Downloads | Build Status |
 | :------ | :--- | :------------- | :-------------- | :----------- |
 | [LatticeSpaceGroups.jl](lib/LatticeSpaceGroups) | Lattice geometry, bonds, and the site permutations symmetry groups need | [![][lsg-version]][lsg-juliahub] | [![][lsg-total]][lsg-downloads] | [![][lsg-ci]][lsg-ci-url] |
-| [ConnectedConfigs.jl](lib/ConnectedConfigs) | Batched local-energy kernel: connected configurations and their matrix elements | [![][cc-version]][cc-juliahub] | [![][cc-total]][cc-downloads] | [![][cc-ci]][cc-ci-url] |
+| [ConnectedBasisConfigurations.jl](lib/ConnectedBasisConfigurations) | Batched local-energy kernel: connected basis configurations and their matrix elements | [![][cc-version]][cc-juliahub] | [![][cc-total]][cc-downloads] | [![][cc-ci]][cc-ci-url] |
 
 **Tier 2 — the neural-network stack.**
 
@@ -89,9 +89,10 @@ final_energy(log)
 
 The pre-split `Lattices`, `Hilberts`, and `Operators` modules have been retired. `Lattices`
 became `LatticeSpaceGroups`, `Hilberts` is replaced by SymBasis.jl, and `Operators` by
-OperatorAlgebra.jl together with `ConnectedConfigs` — which was proved to reproduce the old
-matrix elements exactly against the reference data in [`lib/ConnectedConfigs/test/golden/`](lib/ConnectedConfigs/test/golden/) before the
-old code was removed. The retired sources remain in git history — recover them with
+OperatorAlgebra.jl together with `ConnectedBasisConfigurations` — which was proved to reproduce
+the old matrix elements exactly against the reference data in
+[`lib/ConnectedBasisConfigurations/test/golden/`](lib/ConnectedBasisConfigurations/test/golden/)
+before the old code was removed. The retired sources remain in git history — recover them with
 `git show 0774c25:archive/pre-split/` — as does the pre-split scratch work under
 `archive/scratch/`.
 
@@ -105,15 +106,16 @@ old code was removed. The retired sources remain in git history — recover them
 | `Operators.build(:TransverseFieldIsing, h, l; ...)`     | `build(TransverseFieldIsing(l; ...))`       |
 | `Operators.connected_basis_configs(H, samples)`         | `connected_padded(H, states)`               |
 
-Three behavioural changes are deliberate: connected configurations are padded with a **zero**
-matrix element rather than `missing`; the degree-of-freedom axis is always **first** (the old
-code put it last for Ising and first for Bose-Hubbard); and two terms reaching the same
+Three behavioural changes are deliberate: connected basis configurations are padded with a
+**zero** matrix element rather than `missing`; the degree-of-freedom axis is always **first**
+(the old code put it last for Ising and first for Bose-Hubbard); and two terms reaching the same
 configuration now produce two rows rather than one summed row, which every consumer sums over
 anyway.
 
 `connected_padded` also accepts a batch of any shape, and `compile(H)` flattens a Hamiltonian
 once so that the per-step cost stops including it — worth about two orders of magnitude on the
-kernel. See the [ConnectedConfigs README](lib/ConnectedConfigs/README.md).
+kernel. See the
+[ConnectedBasisConfigurations README](lib/ConnectedBasisConfigurations/README.md).
 
 ### Further goals
 - [ ] Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
@@ -141,12 +143,12 @@ we would appreciate the following reference as in [CITATION.bib](https://github.
 [lsg-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml/badge.svg?branch=main
 [lsg-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml?query=branch%3Amain
 
-[cc-version]: https://juliahub.com/docs/General/ConnectedConfigs/stable/version.svg
-[cc-juliahub]: https://juliahub.com/ui/Packages/General/ConnectedConfigs
-[cc-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FConnectedConfigs&query=total_requests&label=Total%20Downloads
-[cc-downloads]: https://juliapkgstats.com/pkg/ConnectedConfigs
-[cc-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml/badge.svg?branch=main
-[cc-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml?query=branch%3Amain
+[cc-version]: https://juliahub.com/docs/General/ConnectedBasisConfigurations/stable/version.svg
+[cc-juliahub]: https://juliahub.com/ui/Packages/General/ConnectedBasisConfigurations
+[cc-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FConnectedBasisConfigurations&query=total_requests&label=Total%20Downloads
+[cc-downloads]: https://juliapkgstats.com/pkg/ConnectedBasisConfigurations
+[cc-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedBasisConfigurations.yml/badge.svg?branch=main
+[cc-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedBasisConfigurations.yml?query=branch%3Amain
 
 [core-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FNQSCore&query=total_requests&label=Total%20Downloads
 [core-downloads]: https://juliapkgstats.com/pkg/NQSCore

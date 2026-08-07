@@ -64,7 +64,7 @@ exact `|ψ|²`, and the test suite checks the total-variation distance between t
 ## Quick example
 
 ```@example nqssamplers
-using NQSSamplers, NQSCore, ConnectedConfigs, SymBasis, OperatorAlgebra
+using NQSSamplers, NQSCore, ConnectedBasisConfigurations, SymBasis, OperatorAlgebra
 using DifferentiationInterface, ForwardDiff, Random
 
 spec, nsites = Spin(1 // 2), 6

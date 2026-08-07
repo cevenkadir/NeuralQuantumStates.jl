@@ -26,7 +26,7 @@ end
 
 function sample(s::ExactSampler, a::AbstractAnsatz, θ, rng::AbstractRNG)
     states = s.basis.states
-    x = ConnectedConfigs.configurations(a.dof, states, a.nsites)
+    x = ConnectedBasisConfigurations.configurations(a.dof, states, a.nsites)
     logψ = log_amplitude(a, θ, x)
 
     logp = 2 .* real.(logψ)

@@ -32,9 +32,9 @@ flags:
       - lib/LatticeSpaceGroups/src/
       - lib/LatticeSpaceGroups/ext/
     carryforward: true
-  ConnectedConfigs:
+  ConnectedBasisConfigurations:
     paths:
-      - lib/ConnectedConfigs/src/
+      - lib/ConnectedBasisConfigurations/src/
     carryforward: true
   NQSCore:
     paths:
@@ -67,10 +67,10 @@ component_management:
       name: LatticeSpaceGroups
       paths:
         - lib/LatticeSpaceGroups/**
-    - component_id: ConnectedConfigs
-      name: ConnectedConfigs
+    - component_id: ConnectedBasisConfigurations
+      name: ConnectedBasisConfigurations
       paths:
-        - lib/ConnectedConfigs/**
+        - lib/ConnectedBasisConfigurations/**
     - component_id: NQSCore
       name: NQSCore
       paths:
