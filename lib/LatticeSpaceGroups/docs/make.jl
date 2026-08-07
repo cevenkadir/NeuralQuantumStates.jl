@@ -1,7 +1,12 @@
 using Documenter
 using LatticeSpaceGroups
 
-const REPOLINK = "https://github.com/cevenkadir/NeuralQuantumStates.jl"
+# The navbar's repository link, and the subdirectory rather than the repository root: this
+# package lives inside a monorepo, so the root would land a reader on the umbrella's README.
+# Only the navbar link is affected -- the per-page "Edit on GitHub" links come from `repo`
+# below, which must stay the plain repository for Documenter to resolve source paths.
+const REPOLINK =
+    "https://github.com/cevenkadir/NeuralQuantumStates.jl/tree/main/lib/LatticeSpaceGroups"
 const CANONICAL = "https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/"
 
 DocMeta.setdocmeta!(

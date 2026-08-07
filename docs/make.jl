@@ -48,6 +48,11 @@ makedocs(;
         "Home" => "index.md",
         "Basics" => "basics.md",
         "Manual" => Any[
+            # Tier 1 first, matching the order the home page introduces the ecosystem in.
+            # These two packages carry their own sites; the pages here are short chapters
+            # that link into them, so a reader browsing the Manual sees the whole stack.
+            "Lattices and symmetries"=>"manual/latticespacegroups.md",
+            "Connected configurations"=>"manual/connectedconfigs.md",
             "Variational states"=>"manual/nqscore.md",
             "Ansätze"=>"manual/nqsansatze.md",
             "Samplers"=>"manual/nqssamplers.md",

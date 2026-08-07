@@ -60,26 +60,11 @@ import Pkg; Pkg.add(url="https://github.com/cevenkadir/NeuralQuantumStates.jl")
 See [Basics](@ref) for a worked example that builds a lattice, a Hilbert space, and a
 Hamiltonian, and then inspects its connected basis configurations.
 
-Two of the Tier 1 packages are registered in their own right, and have their own sites rather
-than pages here.
-
-`LatticeSpaceGroups` — [full site](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/):
-
-- [Lattices](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/manual/lattices/)
-  — the predefined lattice zoo, bonds and neighbour shells, and building one by hand
-- [Symmetries](https://cevenkadir.github.io/NeuralQuantumStates.jl/LatticeSpaceGroups/dev/manual/symmetries/)
-  — translations, point groups, space groups, and the bridge to SymBasis.jl
-
-`ConnectedConfigs` — [full site](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/):
-
-- [Connected configurations](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/connected_states/)
-  — compiling an operator, batch shapes, the padding convention, reusing buffers
-- [Local operators](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/local_operators/)
-  — the digit ordering, and why `PAULI_Z` is the wrong constant to build a Hamiltonian from
-- [Symmetry sectors](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/symmetry_sectors/)
-  — folding onto orbit representatives, characters and norm factors
-- [Backends](https://cevenkadir.github.io/NeuralQuantumStates.jl/ConnectedConfigs/dev/manual/backends/)
-  — swapping SymBasis or OperatorAlgebra for another library
+`LatticeSpaceGroups` and `ConnectedConfigs` are registered as packages in their own right and
+carry their own documentation sites. The Manual has a chapter for each —
+[Lattices and symmetries](manual/latticespacegroups.md) and
+[Connected configurations](manual/connectedconfigs.md) — covering what you need to use them
+from here, and linking on to the full sites for the rest.
 
 ## Bug reports and feature requests
 
