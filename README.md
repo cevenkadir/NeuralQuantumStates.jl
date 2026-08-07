@@ -47,19 +47,19 @@ sparse and dense conversion, and fermionic sites. Everything below lives in this
 
 **Tier 1 — no machine-learning dependencies.** Usable on their own for exact diagonalization.
 
-| Package | Role | Stable Version | Monthly Downloads | Total Downloads | Build Status |
-| :------ | :--- | :------------- | :---------------- | :-------------- | :----------- |
-| [LatticeSpaceGroups.jl](lib/LatticeSpaceGroups) | Lattice geometry, bonds, and the site permutations symmetry groups need | [![][lsg-version]][lsg-juliahub] | [![][lsg-monthly]][lsg-downloads] | [![][lsg-total]][lsg-downloads] | [![][lsg-ci]][lsg-ci-url] |
-| [ConnectedConfigs.jl](lib/ConnectedConfigs) | Batched local-energy kernel: connected configurations and their matrix elements | [![][cc-version]][cc-juliahub] | [![][cc-monthly]][cc-downloads] | [![][cc-total]][cc-downloads] | [![][cc-ci]][cc-ci-url] |
+| Package | Role | Stable Version | Total Downloads | Build Status |
+| :------ | :--- | :------------- | :-------------- | :----------- |
+| [LatticeSpaceGroups.jl](lib/LatticeSpaceGroups) | Lattice geometry, bonds, and the site permutations symmetry groups need | [![][lsg-version]][lsg-juliahub] | [![][lsg-total]][lsg-downloads] | [![][lsg-ci]][lsg-ci-url] |
+| [ConnectedConfigs.jl](lib/ConnectedConfigs) | Batched local-energy kernel: connected configurations and their matrix elements | [![][cc-version]][cc-juliahub] | [![][cc-total]][cc-downloads] | [![][cc-ci]][cc-ci-url] |
 
 **Tier 2 — the neural-network stack.**
 
-| Package | Role | Stable Version | Monthly Downloads | Total Downloads | Build Status |
-| :------ | :--- | :------------- | :---------------- | :-------------- | :----------- |
-| [NQSCore.jl](lib/NQSCore) | Interfaces, `MCState` and `FullSumState`, log-derivatives, statistics | — | [![][core-monthly]][core-downloads] | [![][core-total]][core-downloads] | [![][core-ci]][core-ci-url] |
-| [NQSAnsatze.jl](lib/NQSAnsatze) | Ansätze on [Lux.jl](https://github.com/LuxDL/Lux.jl): RBM, symmetric RBM, Jastrow | — | [![][ansatze-monthly]][ansatze-downloads] | [![][ansatze-total]][ansatze-downloads] | [![][ansatze-ci]][ansatze-ci-url] |
-| [NQSSamplers.jl](lib/NQSSamplers) | Metropolis sampling with local, exchange and Hamiltonian rules | — | [![][samplers-monthly]][samplers-downloads] | [![][samplers-total]][samplers-downloads] | [![][samplers-ci]][samplers-ci-url] |
-| [NQSOptimisers.jl](lib/NQSOptimisers) | Stochastic reconfiguration, MinSR, natural gradient | — | [![][optimisers-monthly]][optimisers-downloads] | [![][optimisers-total]][optimisers-downloads] | [![][optimisers-ci]][optimisers-ci-url] |
+| Package | Role | Stable Version | Total Downloads | Build Status |
+| :------ | :--- | :------------- | :-------------- | :----------- |
+| [NQSCore.jl](lib/NQSCore) | Interfaces, `MCState` and `FullSumState`, log-derivatives, statistics | — | [![][core-total]][core-downloads] | [![][core-ci]][core-ci-url] |
+| [NQSAnsatze.jl](lib/NQSAnsatze) | Ansätze on [Lux.jl](https://github.com/LuxDL/Lux.jl): RBM, symmetric RBM, Jastrow | — | [![][ansatze-total]][ansatze-downloads] | [![][ansatze-ci]][ansatze-ci-url] |
+| [NQSSamplers.jl](lib/NQSSamplers) | Metropolis sampling with local, exchange and Hamiltonian rules | — | [![][samplers-total]][samplers-downloads] | [![][samplers-ci]][samplers-ci-url] |
+| [NQSOptimisers.jl](lib/NQSOptimisers) | Stochastic reconfiguration, MinSR, natural gradient | — | [![][optimisers-total]][optimisers-downloads] | [![][optimisers-ci]][optimisers-ci-url] |
 
 An em dash in **Stable Version** means the package has not been registered in General yet, so
 it has no released version to point at.
@@ -136,7 +136,6 @@ we would appreciate the following reference as in [CITATION.bib](https://github.
 
 [lsg-version]: https://juliahub.com/docs/General/LatticeSpaceGroups/stable/version.svg
 [lsg-juliahub]: https://juliahub.com/ui/Packages/General/LatticeSpaceGroups
-[lsg-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FLatticeSpaceGroups&query=total_requests&suffix=%2Fmonth&label=Downloads
 [lsg-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FLatticeSpaceGroups&query=total_requests&label=Total%20Downloads
 [lsg-downloads]: https://juliapkgstats.com/pkg/LatticeSpaceGroups
 [lsg-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-LatticeSpaceGroups.yml/badge.svg?branch=main
@@ -144,31 +143,26 @@ we would appreciate the following reference as in [CITATION.bib](https://github.
 
 [cc-version]: https://juliahub.com/docs/General/ConnectedConfigs/stable/version.svg
 [cc-juliahub]: https://juliahub.com/ui/Packages/General/ConnectedConfigs
-[cc-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FConnectedConfigs&query=total_requests&suffix=%2Fmonth&label=Downloads
 [cc-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FConnectedConfigs&query=total_requests&label=Total%20Downloads
 [cc-downloads]: https://juliapkgstats.com/pkg/ConnectedConfigs
 [cc-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml/badge.svg?branch=main
 [cc-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-ConnectedConfigs.yml?query=branch%3Amain
 
-[core-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FNQSCore&query=total_requests&suffix=%2Fmonth&label=Downloads
 [core-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FNQSCore&query=total_requests&label=Total%20Downloads
 [core-downloads]: https://juliapkgstats.com/pkg/NQSCore
 [core-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSCore.yml/badge.svg?branch=main
 [core-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSCore.yml?query=branch%3Amain
 
-[ansatze-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FNQSAnsatze&query=total_requests&suffix=%2Fmonth&label=Downloads
 [ansatze-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FNQSAnsatze&query=total_requests&label=Total%20Downloads
 [ansatze-downloads]: https://juliapkgstats.com/pkg/NQSAnsatze
 [ansatze-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSAnsatze.yml/badge.svg?branch=main
 [ansatze-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSAnsatze.yml?query=branch%3Amain
 
-[samplers-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FNQSSamplers&query=total_requests&suffix=%2Fmonth&label=Downloads
 [samplers-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FNQSSamplers&query=total_requests&label=Total%20Downloads
 [samplers-downloads]: https://juliapkgstats.com/pkg/NQSSamplers
 [samplers-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSSamplers.yml/badge.svg?branch=main
 [samplers-ci-url]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSSamplers.yml?query=branch%3Amain
 
-[optimisers-monthly]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Fmonthly_downloads%2FNQSOptimisers&query=total_requests&suffix=%2Fmonth&label=Downloads
 [optimisers-total]: https://img.shields.io/badge/dynamic/json?url=http%3A%2F%2Fjuliapkgstats.com%2Fapi%2Fv1%2Ftotal_downloads%2FNQSOptimisers&query=total_requests&label=Total%20Downloads
 [optimisers-downloads]: https://juliapkgstats.com/pkg/NQSOptimisers
 [optimisers-ci]: https://github.com/cevenkadir/NeuralQuantumStates.jl/actions/workflows/CI-NQSOptimisers.yml/badge.svg?branch=main
