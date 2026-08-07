@@ -1,0 +1,74 @@
+# The one place every package's test job is defined.
+#
+# This workflow never runs on its own -- `workflow_call` is its only trigger. Each package has
+# a small caller workflow that supplies the three things that actually differ and nothing else,
+# which is what keeps a per-package status badge possible: a badge is per *workflow file* and
+# reflects the whole run, so six badges reading "CI (<Package>) passing" need six files. What
+# they do not need is six copies of these steps.
+name: CI (package)
+
+on:
+  workflow_call:
+    inputs:
+      project:
+        description: 'Package environment to build and test, relative to the repository root.'
+        required: true
+        type: string
+      coverage-directories:
+        description: 'Comma-separated source directories to collect coverage from.'
+        required: true
+        type: string
+      flags:
+        description: 'Codecov flag to upload under. Must match a flag declared in codecov.yml.'
+        required: true
+        type: string
+
+jobs:
+  test:
+    name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
+      actions: write
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          # 1.11 is the compat floor declared by every package in this repo; the `[sources]`
+          # entries that resolve the lib/* packages also require it.
+          - '1.11'
+          - '1.12'
+          - '1'
+          - 'nightly'
+          - 'pre'
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+        arch: [x64, aarch64]
+        exclude:
+          # macOS runners are ARM; the Linux and Windows ones are x64.
+          - os: ubuntu-latest
+            arch: aarch64
+          - os: windows-latest
+            arch: aarch64
+          - os: macOS-latest
+            arch: x64
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+        with:
+          project: ${{ inputs.project }}
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          project: ${{ inputs.project }}
+      - uses: julia-actions/julia-processcoverage@v1
+        with:
+          directories: ${{ inputs.coverage-directories }}
+      - uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          flags: ${{ inputs.flags }}
