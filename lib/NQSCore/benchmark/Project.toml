@@ -1,0 +1,14 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+[sources]
+ConnectedBasisConfigurations = {path = "../../ConnectedBasisConfigurations"}
+NQSCore = {path = ".."}
