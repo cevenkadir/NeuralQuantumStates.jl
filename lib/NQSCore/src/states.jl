@@ -52,6 +52,24 @@ _colocate(like::AbstractArray, mels::AbstractArray) =
     copyto!(similar(like, eltype(mels), size(mels)), mels)
 
 """
+    NQSCore.to_host(x) -> AbstractArray
+
+Bring `x` into host memory, leaving it alone when it is already there.
+
+The mirror of `_colocate`, and it exists for the samplers. Accepting or rejecting a Metropolis
+proposal, and searching an inverse cumulative distribution, are scalar sequential decisions —
+run against a device array they are either an outright error or one round trip per element. The
+quantities they branch on are small, one number per chain or per basis state, so fetching them
+in a single transfer is the cheap half of that trade.
+
+It does not make a sampler *fast* on a device: a Metropolis sweep still pays one transfer per
+step, and the answer to that is a sampler that keeps its chains on the device rather than a
+better transfer. It makes one work, and makes the cost measurable.
+"""
+to_host(x::Array) = x
+to_host(x::AbstractArray) = Array(x)
+
+"""
     local_energy(state, operator, packed_states) -> AbstractArray
 
 Local energies `E_loc(s) = Σ_{s'} ⟨s|Ô|s'⟩ ψ(s')/ψ(s)`.

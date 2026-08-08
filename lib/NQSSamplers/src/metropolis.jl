@@ -55,7 +55,13 @@ end
 """Log of `|ψ|²` for a batch of packed configurations."""
 function _log_prob(a::AbstractAnsatz, θ, states::AbstractVector)
     x = ConnectedBasisConfigurations.configurations(NQSCore.dof(a), states, NQSCore.n_sites(a))
-    return 2 .* real.(log_amplitude(a, θ, x))
+    # Brought to the host because the acceptance test below is scalar and sequential: it reads
+    # one chain's log-probability, compares, and maybe writes it back. That is a round trip per
+    # element against a device array, and an error on most of them. One transfer of `n_chains`
+    # numbers per step is the cheap version of the same thing -- though it is still a transfer
+    # per step, which is why a device-resident sampler would be a different design rather than
+    # a tuning of this one.
+    return NQSCore.to_host(2 .* real.(log_amplitude(a, θ, x)))
 end
 
 """Whether a proposed configuration is admissible: inside the basis, when one is given."""

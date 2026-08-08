@@ -33,10 +33,10 @@ function sample(s::ExactSampler, a::AbstractAnsatz, θ, rng::AbstractRNG, ::Any=
     x = ConnectedBasisConfigurations.configurations(dof(a), states, n_sites(a))
     logψ = log_amplitude(a, θ, x)
 
-    p = born_probabilities(logψ)
-
-    # Inverse-CDF sampling over the enumerated distribution.
-    cumulative = cumsum(p)
+    # Inverse-CDF sampling over the enumerated distribution. The search is a scalar binary
+    # search, so the distribution comes to the host once rather than being probed element by
+    # element wherever the ansatz happened to leave it.
+    cumulative = to_host(cumsum(born_probabilities(logψ)))
     out = similar(states, s.n_samples)
     @inbounds for i in 1:s.n_samples
         r = rand(rng)
