@@ -79,10 +79,15 @@ because everything else already works on a device array unchanged:
 `ConjugateGradientSolver` needs nothing: it only multiplies, and with `:matrixfree` there is no
 square matrix to keep on the device in the first place.
 
-!!! warning "Not yet run on hardware"
-    The device paths are written and their dispatch is tested, but no part of this stack has
-    executed on a GPU. Treat the first run as an experiment; `lib/NQSCore/benchmark/gpu` exists
-    to make it a measured one.
+!!! note "What has actually been run"
+    A full variational step — forward pass, local energies, gradient, and a matrix-free solve —
+    has been measured on an NVIDIA Quadro GV100, agreeing with the host result to a relative
+    `6.6e-16`. `mode=:matrixfree` with `ConjugateGradientSolver` is the combination that was
+    exercised.
+
+    Two paths in the extension have **not** been: `CholeskySolver`'s indefinite fallback, which
+    only triggers when the shift fails to cover the tensor's zero modes, and the
+    `PseudoInverseSolver` refusal. Neither has run on hardware, so treat them as untested.
 
 ## Regularization, and what it is not for
 
