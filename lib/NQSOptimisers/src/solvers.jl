@@ -8,7 +8,7 @@ positive-semidefinite `A`. Keeping that behind an interface is not ceremony: the
 tensor is routinely **singular**, because redundant parameter directions and directions no
 sample explores both produce exact zero modes. Which regularization is used is therefore a real
 choice with real consequences, not an implementation detail — and it is also the seam where a
-batched GPU solver such as BatchSolve.jl would attach.
+GPU solver attaches, since the geometric tensor is exactly the object worth keeping on a device.
 
 # Interface
     solve(solver, A, b, shift) -> x
@@ -83,6 +83,15 @@ ConjugateGradientSolver(; maxiter::Integer=1000, tol::Real=1e-10) =
 
 function solve(s::ConjugateGradientSolver, A, b::AbstractVector, shift::Real)
     op = x -> A * x + shift * x
-    x, _ = linsolve(op, b; maxiter=s.maxiter, tol=s.tol, isposdef=true)
+    # `ishermitian` and `issymmetric` are what actually select conjugate gradients. KrylovKit
+    # cannot see inside a function operator, so without them it falls back to GMRES — which
+    # solves the same system, but with no use made of the symmetry and, on an ill-conditioned
+    # geometric tensor, orders of magnitude more slowly. `isposdef` alone is not enough.
+    # The interface's contract is a symmetric positive-semidefinite `A`, so asserting both is
+    # exactly as true as the contract.
+    x, _ = linsolve(
+        op, b; maxiter=s.maxiter, tol=s.tol,
+        ishermitian=true, issymmetric=eltype(b) <: Real, isposdef=true
+    )
     return x
 end
