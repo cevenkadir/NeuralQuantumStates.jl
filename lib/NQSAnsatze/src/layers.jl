@@ -86,11 +86,25 @@ Only the strict upper triangle is parameterized: `J_{ij}` and `J_{ji}` would mul
 product `x_i x_j`, so carrying both makes the parameterization redundant and the geometric
 tensor singular.
 """
-struct Jastrow <: Lux.AbstractLuxLayer
+struct Jastrow{I<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
     nsites::Int
     T::Type
+    # Where each entry of the coupling matrix comes from: `index[i, j] == k + 1` means the
+    # `k`-th coupling, and `1` means the padded zero. Precomputed so that assembling the matrix
+    # is one gather rather than a scatter loop.
+    index::I
 end
-Jastrow(nsites::Integer; T::Type=ComplexF64) = Jastrow(Int(nsites), T)
+
+function Jastrow(nsites::Integer; T::Type=ComplexF64)
+    n = Int(nsites)
+    index = ones(Int, n, n)          # 1 selects the padded zero
+    k = 0
+    for i in 1:(n-1), j in (i+1):n
+        k += 1
+        index[i, j] = k + 1
+    end
+    return Jastrow(n, T, index)
+end
 
 function Lux.initialparameters(rng::AbstractRNG, layer::Jastrow)
     n = layer.nsites
@@ -101,14 +115,16 @@ Lux.parameterlength(l::Jastrow) = l.nsites * (l.nsites - 1) ÷ 2
 Lux.statelength(::Jastrow) = 0
 
 function (layer::Jastrow)(x::AbstractMatrix, ps, st)
-    n = layer.nsites
-    out = zeros(eltype(ps.coupling), size(x, 2))
-    k = 0
-    for i in 1:(n-1), j in (i+1):n
-        k += 1
-        out = out .+ ps.coupling[k] .* (@view(x[i, :]) .* @view(x[j, :]))
-    end
-    return out, st
+    # `Σ_{i<j} J_ij x_i x_j` written as the quadratic form `xᵀ J x` with `J` strictly upper
+    # triangular, evaluated column-wise. That turns an `O(n²)` loop over pairs — each iteration
+    # reading one parameter scalar-wise and allocating an accumulator — into one matrix
+    # multiplication, which is both a large constant factor faster and the only version that
+    # can run on a device array, where a scalar read of a parameter is an error.
+    padded = vcat(zero(eltype(ps.coupling)), ps.coupling)
+    # The index table has to sit beside the parameters it indexes into; on the CPU this is the
+    # table itself and costs nothing.
+    J = padded[colocate(padded, layer.index)]
+    return vec(sum(x .* (J * x); dims=1)), st
 end
 
 """
@@ -126,10 +142,12 @@ more importantly the ansatz cannot waste capacity representing states the ground
 not to occupy. This is the payoff of deriving symmetry permutations from lattice geometry: the
 same code gives a translation-invariant ansatz on a kagome torus as on a chain.
 """
-struct SymmetricRBM <: Lux.AbstractLuxLayer
+struct SymmetricRBM{P<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
     nsites::Int
     nfilters::Int
-    permutations::Vector{Vector{Int}}
+    # One permutation per **column**, rather than a vector of vectors: a single rectangular
+    # array is what can be moved to a device in one piece, and `eachcol` recovers the old view.
+    permutations::P
     T::Type
 end
 
@@ -139,7 +157,11 @@ function SymmetricRBM(permutations::AbstractVector, alpha::Real=1; T::Type=Compl
     all(length(p) == nsites for p in permutations) ||
         throw(ArgumentError("all permutations must have the same length"))
     nfilters = max(1, round(Int, alpha))
-    return SymmetricRBM(nsites, nfilters, [collect(Int, p) for p in permutations], T)
+    table = Matrix{Int}(undef, nsites, length(permutations))
+    for (k, p) in pairs(permutations)
+        table[:, k] = p
+    end
+    return SymmetricRBM(nsites, nfilters, table, T)
 end
 
 function Lux.initialparameters(rng::AbstractRNG, layer::SymmetricRBM)
@@ -155,12 +177,17 @@ Lux.parameterlength(l::SymmetricRBM) = 1 + l.nfilters + l.nfilters * l.nsites
 Lux.statelength(::SymmetricRBM) = 0
 
 function (layer::SymmetricRBM)(x::AbstractMatrix, ps, st)
-    T = eltype(ps.weight)
-    out = zeros(T, size(x, 2))
-    # A symmetric visible bias couples to the total, which is itself invariant.
-    out = out .+ ps.visible[1] .* vec(sum(x; dims=1))
-    for perm in layer.permutations
-        θ = ps.weight * x[perm, :] .+ ps.hidden
+    # A symmetric visible bias couples to the total, which is itself invariant. `ps.visible` is
+    # a length-one array, and broadcasting against it gets its value without a scalar read —
+    # `ps.visible[1]` would be a host round-trip on a device array. Starting the accumulator
+    # from this term also removes the `zeros(...)`, which built a host array regardless of where
+    # the parameters lived.
+    out = vec(ps.visible .* sum(x; dims=1))
+    # Moved once for the whole loop rather than once per group element; on the CPU this is the
+    # table itself and the views below are free.
+    perms = colocate(ps.weight, layer.permutations)
+    for k in axes(perms, 2)
+        θ = ps.weight * x[view(perms, :, k), :] .+ ps.hidden
         out = out .+ vec(sum(logtwocosh, θ; dims=1))
     end
     return out, st

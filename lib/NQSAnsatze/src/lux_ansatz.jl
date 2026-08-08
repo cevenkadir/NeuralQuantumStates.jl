@@ -71,9 +71,45 @@ _input_type(θ) = Float64
 _input_type(θ::NamedTuple) = isempty(θ) ? Float64 : _input_type(first(values(θ)))
 _input_type(θ::AbstractArray) = real(eltype(θ))
 
+"""Any array among the parameters, whose type says where the network expects to be run."""
+_reference_array(θ) = nothing
+_reference_array(θ::NamedTuple) = isempty(θ) ? nothing : _reference_array(first(values(θ)))
+_reference_array(θ::AbstractArray) = θ
+
+"""
+    colocate(reference, input)
+
+Put `input` wherever `reference` lives.
+
+The parameters decide the device: `Lux` moves them, and the batch has to follow or the first
+matrix multiplication mixes host and device memory. Inferring it from the parameters rather than
+storing a device in the ansatz means there is no new field, no new dependency and nothing to
+keep in sync — and on the CPU it does nothing at all.
+
+Whether the reference is in host memory is decided by unwrapping it rather than by testing for
+`Array` directly. Parameters do not always arrive as plain arrays even on the CPU: rebuilding
+them from a flat vector, which is exactly what differentiating through
+`NQSCore.flatten_parameters` does, hands back views into a `ComponentArray`. Treating one of
+those as foreign would copy it, and a copy is a mutation that reverse-mode AD refuses to
+differentiate through.
+"""
+colocate(reference, input::AbstractArray) =
+    _is_host(reference) ? input : copyto!(similar(reference, eltype(input), size(input)), input)
+
+_is_host(::Nothing) = true
+_is_host(::Array) = true
+function _is_host(a::AbstractArray)
+    p = parent(a)
+    return p === a ? false : _is_host(p)
+end
+_is_host(_) = true
+
 function NQSCore.log_amplitude(a::LuxAnsatz, θ, x::AbstractMatrix)
+    # Configurations arrive as exact rationals, which no network and no accelerator wants, so
+    # the conversion to a float type has to happen anyway; doing the transfer in the same step
+    # keeps the host/device boundary to this one line.
     T = _input_type(θ)
-    input = T.(x)
+    input = colocate(_reference_array(θ), T.(x))
     y, _ = Lux.apply(a.model, input, θ, a.states)
     return _as_log_amplitude(y)
 end

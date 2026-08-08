@@ -151,6 +151,57 @@ end
         end
     end
 
+    @testset "colocation leaves host arrays alone" begin
+        # The batch follows the parameters onto whatever device they are on. Everything here is
+        # in host memory, so every one of these must be the identity -- returning a copy instead
+        # would be a mutation, and reverse-mode AD refuses to differentiate through one. The
+        # ComponentArray case is the one that matters: rebuilding parameters from a flat vector
+        # hands back views, not `Array`s, and that is exactly what differentiating does.
+        x = randn(Xoshiro(0), 3, 4)
+        @test NQSAnsatze.colocate(nothing, x) === x
+        @test NQSAnsatze.colocate(randn(2, 2), x) === x
+        @test NQSAnsatze.colocate(view(randn(8), 2:5), x) === x
+        @test NQSAnsatze.colocate(reshape(randn(8), 2, 4), x) === x
+
+        θ = (W=randn(Xoshiro(1), 2, 3), b=randn(Xoshiro(2), 2))
+        flat, restore = flatten_parameters(θ)
+        rebuilt = restore(flat)
+        @test !(rebuilt.W isa Array)                 # a view into a ComponentArray
+        @test NQSAnsatze.colocate(rebuilt.W, x) === x
+    end
+
+    @testset "every layer differentiates correctly" begin
+        # Jastrow assembles its coupling matrix by gathering from the parameter vector, and
+        # SymmetricRBM gathers permuted copies of the input. Both are indexing operations that
+        # reverse-mode AD has to carry a gradient back through, so each layer is checked against
+        # a finite difference rather than only the one that happens to be simplest.
+        rng = Xoshiro(12)
+        dof, nsites = Spin(1 // 2), 4
+        b = basis(dof_object(dof), nsites)
+        perms = [circshift(1:nsites, s) for s in 0:(nsites-1)]
+
+        @testset "$(nameof(typeof(model)))" for model in (
+            RBM(nsites, 2), Jastrow(nsites), SymmetricRBM(perms, 2)
+        )
+            a = LuxAnsatz(model, dof, nsites; rng=rng)
+            θ = init_parameters(a, Xoshiro(5))
+            x = configurations(dof, b.states[1:6], nsites)
+
+            O = log_derivatives(a, θ, x; backend=BACKEND, holomorphic=true)
+            flat, restore = flatten_parameters(θ)
+            @test size(O) == (6, length(flat))
+            @test all(isfinite, O)
+
+            ε = 1e-6
+            for k in (1, min(3, length(flat)), length(flat))
+                fp = copy(flat); fp[k] += ε
+                fm = copy(flat); fm[k] -= ε
+                fd = (log_amplitude(a, restore(fp), x) .- log_amplitude(a, restore(fm), x)) ./ (2ε)
+                @test isapprox(O[:, k], fd; atol=1e-5)
+            end
+        end
+    end
+
     @testset "an RBM optimizes to the exact ground state" begin
         # At this size an RBM with alpha=4 has ample capacity to represent the ground state
         # exactly, so the assertion is machine precision rather than a loose tolerance: a
@@ -180,7 +231,7 @@ end
         # The extension: permutations derived from geometry rather than written by hand.
         lat = build(Hypercube([6]; periodic=true))
         layer = SymmetricRBM(lat, 2)
-        @test length(layer.permutations) == 6           # one per translation of the ring
+        @test size(layer.permutations, 2) == 6       # one per translation of the ring
 
         rng = Xoshiro(6)
         ps = Lux.initialparameters(rng, layer)
@@ -190,7 +241,7 @@ end
         @test length(y) == 3
 
         @testset "invariant under the lattice's translations" begin
-            for p in layer.permutations
+            for p in eachcol(layer.permutations)
                 yp, _ = layer(x[p, :], ps, st)
                 @test yp ≈ y
             end
