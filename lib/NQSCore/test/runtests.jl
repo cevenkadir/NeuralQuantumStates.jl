@@ -563,53 +563,6 @@ end
             @test local_energy(vs, H) ≈ local_energy(vs, H, samples(vs))
         end
 
-        @testset "buffers are reused across calls" begin
-            fresh, _, _ = full_sum(spec, nsites)
-            @test NQSCore.energy_kernel(fresh) === nothing      # nothing built yet
-
-            first = local_energy(fresh, H, b.states)
-            kernel = NQSCore.energy_kernel(fresh)
-            @test kernel !== nothing
-            @test size(kernel.configs, 1) == max_conn_size(compile(H))
-            @test length(kernel.counts) == length(b.states)
-
-            # Reuse must not perturb the answer by so much as a bit.
-            @test local_energy(fresh, H, b.states) == first
-            @test NQSCore.energy_kernel(fresh) === kernel        # ...and not rebuilt
-
-            # It must agree with the allocating path it replaces.
-            plain = ConnectedBasisConfigurations.connected_padded(H, b.states)
-            logψ_s = NQSCore.log_amplitudes(fresh, b.states)
-            logψ_sp = reshape(NQSCore.log_amplitudes(fresh, vec(plain.configs)), size(plain.configs))
-            reference = [
-                sum(plain.mels[j, k] * exp(logψ_sp[j, k] - logψ_s[k]) for j in 1:plain.counts[k];
-                    init=zero(eltype(logψ_s)))
-                for k in eachindex(b.states)
-            ]
-            @test first ≈ reference
-
-            @testset "a different batch size rebuilds" begin
-                local_energy(fresh, H, b.states[1:4])
-                @test NQSCore.energy_kernel(fresh) !== kernel
-                @test length(NQSCore.energy_kernel(fresh).counts) == 4
-            end
-
-            @testset "a different operator rebuilds" begin
-                other = tfi(nsites; J=0.5, h_x=0.3)
-                local_energy(fresh, H, b.states)
-                before = NQSCore.energy_kernel(fresh)
-                local_energy(fresh, other, b.states)
-                @test NQSCore.energy_kernel(fresh) !== before
-            end
-
-            @testset "an already-compiled operator is accepted" begin
-                compiled = compile(H)
-                state, _, _ = full_sum(spec, nsites)
-                @test local_energy(state, compiled, b.states) ≈ first
-                @test NQSCore.energy_kernel(state).operator === compiled
-            end
-        end
-
         @testset "padded slots contribute nothing" begin
             # The reduction runs over the full column rather than each sample's connection
             # count, which is only correct because a padded slot repeats the sample with a zero

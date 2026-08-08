@@ -150,10 +150,6 @@ let rng = Xoshiro(5), nsites = 12
         @benchmarkable local_energy($vs, $H, $states)
     SUITE["fullsum12"]["local_energy, precompiled"] =
         @benchmarkable local_energy($vs, $compiled, $states)
-    # A fresh state has no buffers to reuse and no compiled operator to keep, which is what an
-    # optimization loop looked like before the kernel was cached on the state.
-    SUITE["fullsum12"]["local_energy, no buffer reuse"] =
-        @benchmarkable local_energy(fullsum($a, $θ), $H, $states)
     SUITE["fullsum12"]["probabilities"] = @benchmarkable probabilities($vs)
 end
 

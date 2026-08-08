@@ -61,7 +61,6 @@ using DifferentiationInterface
 using ConnectedBasisConfigurations
 
 include("interface.jl")
-include("kernel.jl")
 include("stats.jl")
 include("log_derivatives.jl")
 include("ansatz.jl")

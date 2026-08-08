@@ -38,6 +38,20 @@ log_amplitudes(vs::AbstractVariationalState, states::AbstractArray) =
     log_amplitude(ansatz(vs), parameters(vs), configurations_of(vs, states))
 
 """
+Put `mels` on the same device as `like`, leaving it alone when both are already in host memory.
+
+On the CPU nothing needs to happen: broadcasting a real matrix-element array against complex
+log-amplitudes promotes elementwise for free, and materializing a converted copy would be a
+full `(max_conn, batch)` allocation bought for nothing. When the log-amplitudes live on a device
+— because the ansatz put them there — the matrix elements have to follow, and `copyto!` into a
+`similar` of the log-amplitudes does that using nothing but Base, which is why the local-energy
+kernel needs no GPU dependency to be GPU-ready.
+"""
+_colocate(::Array, mels::AbstractArray) = mels
+_colocate(like::AbstractArray, mels::AbstractArray) =
+    copyto!(similar(like, eltype(mels), size(mels)), mels)
+
+"""
     local_energy(state, operator, packed_states) -> AbstractArray
 
 Local energies `E_loc(s) = Σ_{s'} ⟨s|Ô|s'⟩ ψ(s')/ψ(s)`.
@@ -51,11 +65,10 @@ the chain structure survives into [`statistics`](@ref) — which needs it for sp
 between-chain error bar. Flattening happens here rather than in the sampler, leaving the chain
 layout the sampler's business.
 
-`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts — an `OpSum`, or
-an already-compiled operator. Handing the *same* operator object back on every call lets the
-state reuse its [`LocalEnergyKernel`](@ref NQSCore.LocalEnergyKernel), which compiles once and
-writes the connected configurations into buffers it keeps, so an optimization loop pays neither
-cost per step.
+`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts. Passing a
+`compile`d operator skips recompiling it on every call, which is worth doing inside an
+optimization loop and irrelevant for a single large batch, where the connected-configuration
+kernel dominates.
 """
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractArray)
     E = local_energy(vs, operator, vec(states))
@@ -78,7 +91,7 @@ recomputed behind each caller's back.
 function _local_energy(
     vs::AbstractVariationalState, operator, states::AbstractVector, logψ_s::AbstractVector
 )
-    res = connections(vs, operator, states)
+    res = ConnectedBasisConfigurations.connected_padded(operator, states)
 
     # One batched evaluation over every connected configuration of every sample, rather than
     # one call per sample: the ansatz is the expensive part, so it is called once.
@@ -169,20 +182,12 @@ mutable struct FullSumState{A<:AbstractAnsatz,P,S,B} <: AbstractVariationalState
     parameters::P
     basis::S
     backend::B
-    # Not concretely typed, and deliberately so: the kernel's type depends on the operator,
-    # which is not known when the state is built. It is read once per `local_energy` call,
-    # behind a function barrier, so the dynamic dispatch is paid per call rather than per
-    # sample — invisible next to one evaluation of the ansatz.
-    kernel::Union{Nothing,LocalEnergyKernel}
 end
 
 function FullSumState(ansatz::AbstractAnsatz, parameters; backend, basis=nothing)
     b = basis === nothing ? default_basis(ansatz) : basis
-    return FullSumState(ansatz, parameters, b, backend, nothing)
+    return FullSumState(ansatz, parameters, b, backend)
 end
-
-energy_kernel(vs::FullSumState) = vs.kernel
-energy_kernel!(vs::FullSumState, kernel) = (vs.kernel = kernel; kernel)
 
 """
     default_basis(ansatz) -> basis
@@ -271,7 +276,6 @@ mutable struct MCState{A<:AbstractAnsatz,P,S<:AbstractSampler,B,R<:AbstractRNG,C
     samples::C
     sampler_state::T
     stale::Bool
-    kernel::Union{Nothing,LocalEnergyKernel}   # see the note on `FullSumState.kernel`
 end
 
 function MCState(
@@ -279,14 +283,11 @@ function MCState(
     backend, rng::AbstractRNG=Random.default_rng()
 )
     drawn, state = sample(sampler, ansatz, parameters, rng, nothing)
-    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false, nothing)
+    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false)
 end
 
 ansatz(vs::MCState) = vs.ansatz
 parameters(vs::MCState) = vs.parameters
-
-energy_kernel(vs::MCState) = vs.kernel
-energy_kernel!(vs::MCState, kernel) = (vs.kernel = kernel; kernel)
 
 sample_weights(::MCState) = nothing
 _sample_weights(::MCState, ::AbstractVector) = nothing
