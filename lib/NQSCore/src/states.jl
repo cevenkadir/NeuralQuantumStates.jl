@@ -51,10 +51,11 @@ the chain structure survives into [`statistics`](@ref) — which needs it for sp
 between-chain error bar. Flattening happens here rather than in the sampler, leaving the chain
 layout the sampler's business.
 
-`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts. Passing a
-`compile`d operator skips recompiling it on every call, which is worth doing inside an
-optimization loop and irrelevant for a single large batch, where the connected-configuration
-kernel dominates.
+`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts — an `OpSum`, or
+an already-compiled operator. Handing the *same* operator object back on every call lets the
+state reuse its [`LocalEnergyKernel`](@ref NQSCore.LocalEnergyKernel), which compiles once and
+writes the connected configurations into buffers it keeps, so an optimization loop pays neither
+cost per step.
 """
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractArray)
     E = local_energy(vs, operator, vec(states))
@@ -77,25 +78,19 @@ recomputed behind each caller's back.
 function _local_energy(
     vs::AbstractVariationalState, operator, states::AbstractVector, logψ_s::AbstractVector
 )
-    res = ConnectedBasisConfigurations.connected_padded(operator, states)
+    res = connections(vs, operator, states)
 
     # One batched evaluation over every connected configuration of every sample, rather than
     # one call per sample: the ansatz is the expensive part, so it is called once.
     logψ_sp = reshape(log_amplitudes(vs, vec(res.configs)), size(res.configs))
 
-    # The accumulator has to admit both factors: a real-valued ansatz is perfectly legitimate,
-    # and its local energies are still complex whenever the operator's matrix elements are.
-    T = promote_type(eltype(res.mels), eltype(logψ_sp), eltype(logψ_s))
-    E = similar(logψ_s, T)
-    @inbounds for b in eachindex(states)
-        acc = zero(T)
-        logψ_b = logψ_s[b]
-        for j in 1:res.counts[b]
-            acc += res.mels[j, b] * exp(logψ_sp[j, b] - logψ_b)
-        end
-        E[b] = acc
-    end
-    return E
+    # A whole-column reduction rather than a loop bounded by each sample's connection count.
+    # It needs no mask because the padding is already inert: a padded slot repeats the sample
+    # itself with a zero matrix element, so it contributes `0 * exp(0) == 0` exactly — never
+    # `0 * Inf`. Dropping the data-dependent trip count is also what makes this line run
+    # unchanged on a GPU array.
+    mels = _colocate(logψ_sp, res.mels)
+    return vec(sum(mels .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
 end
 
 """
@@ -118,14 +113,18 @@ Note that `expect_and_grad` does **not** go through here: a plain gradient needs
 contraction of `O`, which [`energy_gradient`](@ref) obtains without building the matrix at all.
 `O` is materialized only for the preconditioners that genuinely need it.
 """
-function local_estimators(vs::AbstractVariationalState, operator; holomorphic::Bool=false)
+function local_estimators(
+    vs::AbstractVariationalState, operator; holomorphic::Bool=false, chunk_size=nothing
+)
     states = samples(vs)
     a, θ = ansatz(vs), parameters(vs)
 
     x = configurations_of(vs, states)
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
-    O = log_derivatives(a, θ, x; backend=vs.backend, holomorphic=holomorphic)
+    O = log_derivatives(
+        a, θ, x; backend=vs.backend, holomorphic=holomorphic, chunk_size=chunk_size
+    )
 
     return (; E=E, O=O, weights=_sample_weights(vs, logψ))
 end
@@ -170,12 +169,20 @@ mutable struct FullSumState{A<:AbstractAnsatz,P,S,B} <: AbstractVariationalState
     parameters::P
     basis::S
     backend::B
+    # Not concretely typed, and deliberately so: the kernel's type depends on the operator,
+    # which is not known when the state is built. It is read once per `local_energy` call,
+    # behind a function barrier, so the dynamic dispatch is paid per call rather than per
+    # sample — invisible next to one evaluation of the ansatz.
+    kernel::Union{Nothing,LocalEnergyKernel}
 end
 
 function FullSumState(ansatz::AbstractAnsatz, parameters; backend, basis=nothing)
     b = basis === nothing ? default_basis(ansatz) : basis
-    return FullSumState(ansatz, parameters, b, backend)
+    return FullSumState(ansatz, parameters, b, backend, nothing)
 end
+
+energy_kernel(vs::FullSumState) = vs.kernel
+energy_kernel!(vs::FullSumState, kernel) = (vs.kernel = kernel; kernel)
 
 """
     default_basis(ansatz) -> basis
@@ -216,7 +223,7 @@ function expect(vs::FullSumState, operator)
     return weighted_statistics(E, born_probabilities(logψ))
 end
 
-function expect_and_grad(vs::FullSumState, operator)
+function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     states = samples(vs)
     a, θ = ansatz(vs), parameters(vs)
 
@@ -225,7 +232,7 @@ function expect_and_grad(vs::FullSumState, operator)
     E = _local_energy(vs, operator, states, logψ)
     p = born_probabilities(logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, p; backend=vs.backend)
+    ∇ = energy_gradient(a, θ, x, E, p; backend=vs.backend, chunk_size=chunk_size)
     return weighted_statistics(E, p), ∇
 end
 
@@ -264,6 +271,7 @@ mutable struct MCState{A<:AbstractAnsatz,P,S<:AbstractSampler,B,R<:AbstractRNG,C
     samples::C
     sampler_state::T
     stale::Bool
+    kernel::Union{Nothing,LocalEnergyKernel}   # see the note on `FullSumState.kernel`
 end
 
 function MCState(
@@ -271,11 +279,14 @@ function MCState(
     backend, rng::AbstractRNG=Random.default_rng()
 )
     drawn, state = sample(sampler, ansatz, parameters, rng, nothing)
-    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false)
+    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false, nothing)
 end
 
 ansatz(vs::MCState) = vs.ansatz
 parameters(vs::MCState) = vs.parameters
+
+energy_kernel(vs::MCState) = vs.kernel
+energy_kernel!(vs::MCState, kernel) = (vs.kernel = kernel; kernel)
 
 sample_weights(::MCState) = nothing
 _sample_weights(::MCState, ::AbstractVector) = nothing
@@ -319,7 +330,7 @@ function expect(vs::MCState, operator)
     return statistics(local_energy(vs, operator, samples(vs)))
 end
 
-function expect_and_grad(vs::MCState, operator)
+function expect_and_grad(vs::MCState, operator; chunk_size=nothing)
     states = samples(vs)
     a, θ = ansatz(vs), parameters(vs)
 
@@ -327,6 +338,6 @@ function expect_and_grad(vs::MCState, operator)
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, nothing; backend=vs.backend)
+    ∇ = energy_gradient(a, θ, x, E, nothing; backend=vs.backend, chunk_size=chunk_size)
     return statistics(reshape(E, size(states))), ∇
 end

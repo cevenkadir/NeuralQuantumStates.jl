@@ -563,6 +563,66 @@ end
             @test local_energy(vs, H) ≈ local_energy(vs, H, samples(vs))
         end
 
+        @testset "buffers are reused across calls" begin
+            fresh, _, _ = full_sum(spec, nsites)
+            @test NQSCore.energy_kernel(fresh) === nothing      # nothing built yet
+
+            first = local_energy(fresh, H, b.states)
+            kernel = NQSCore.energy_kernel(fresh)
+            @test kernel !== nothing
+            @test size(kernel.configs, 1) == max_conn_size(compile(H))
+            @test length(kernel.counts) == length(b.states)
+
+            # Reuse must not perturb the answer by so much as a bit.
+            @test local_energy(fresh, H, b.states) == first
+            @test NQSCore.energy_kernel(fresh) === kernel        # ...and not rebuilt
+
+            # It must agree with the allocating path it replaces.
+            plain = ConnectedBasisConfigurations.connected_padded(H, b.states)
+            logψ_s = NQSCore.log_amplitudes(fresh, b.states)
+            logψ_sp = reshape(NQSCore.log_amplitudes(fresh, vec(plain.configs)), size(plain.configs))
+            reference = [
+                sum(plain.mels[j, k] * exp(logψ_sp[j, k] - logψ_s[k]) for j in 1:plain.counts[k];
+                    init=zero(eltype(logψ_s)))
+                for k in eachindex(b.states)
+            ]
+            @test first ≈ reference
+
+            @testset "a different batch size rebuilds" begin
+                local_energy(fresh, H, b.states[1:4])
+                @test NQSCore.energy_kernel(fresh) !== kernel
+                @test length(NQSCore.energy_kernel(fresh).counts) == 4
+            end
+
+            @testset "a different operator rebuilds" begin
+                other = tfi(nsites; J=0.5, h_x=0.3)
+                local_energy(fresh, H, b.states)
+                before = NQSCore.energy_kernel(fresh)
+                local_energy(fresh, other, b.states)
+                @test NQSCore.energy_kernel(fresh) !== before
+            end
+
+            @testset "an already-compiled operator is accepted" begin
+                compiled = compile(H)
+                state, _, _ = full_sum(spec, nsites)
+                @test local_energy(state, compiled, b.states) ≈ first
+                @test NQSCore.energy_kernel(state).operator === compiled
+            end
+        end
+
+        @testset "padded slots contribute nothing" begin
+            # The reduction runs over the full column rather than each sample's connection
+            # count, which is only correct because a padded slot repeats the sample with a zero
+            # matrix element. If that ever changed, this is what would catch it.
+            res = ConnectedBasisConfigurations.connected_padded(H, b.states)
+            for k in eachindex(b.states)
+                for j in (res.counts[k]+1):size(res.mels, 1)
+                    @test iszero(res.mels[j, k])
+                    @test res.configs[j, k] == b.states[k]
+                end
+            end
+        end
+
         @testset "a real-valued ansatz still gets complex local energies" begin
             # The accumulator has to admit the operator's matrix elements, not just the ansatz's
             # output type: a real ansatz with a complex operator is perfectly legitimate.
@@ -573,6 +633,53 @@ end
             E = local_energy(tvs, Hc, b.states)
             @test eltype(E) <: Complex
             @test any(!iszero, E)
+        end
+    end
+
+    @testset "chunking" begin
+        # Chunking bounds the memory of a differentiation pass. It must not change the answer,
+        # for any block size — including ones that do not divide the batch, which is where an
+        # off-by-one in the remainder would show up.
+        spec, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)
+        vs, a, b = full_sum(spec, nsites)
+        x = configurations(spec, b.states, nsites)
+        n = length(b.states)
+
+        O = log_derivatives(a, parameters(vs), x; backend=BACKEND, holomorphic=true)
+        _, ∇ = expect_and_grad(vs, H)
+
+        @testset "block size $cs" for cs in (1, 3, 5, n - 1, n, n + 7)
+            @test log_derivatives(
+                a, parameters(vs), x; backend=BACKEND, holomorphic=true, chunk_size=cs
+            ) == O
+            _, ∇c = expect_and_grad(vs, H; chunk_size=cs)
+            @test ∇c ≈ ∇
+        end
+
+        @testset "non-holomorphic chunking keeps the doubled width" begin
+            wide = log_derivatives(a, parameters(vs), x; backend=BACKEND, chunk_size=3)
+            @test size(wide) == (n, 2 * n_parameters(a))
+            @test wide == log_derivatives(a, parameters(vs), x; backend=BACKEND)
+        end
+
+        @testset "a NamedTuple gradient chunks too" begin
+            toy = ToyAnsatz(spec, nsites, 3)
+            θ = toy_parameters(toy, Xoshiro(7))
+            tvs = FullSumState(toy, θ; backend=BACKEND, basis=b)
+            _, g = expect_and_grad(tvs, H)
+            _, gc = expect_and_grad(tvs, H; chunk_size=5)
+            @test gc.W ≈ g.W && gc.b ≈ g.b && gc.v ≈ g.v
+        end
+
+        @testset "local_estimators passes it through" begin
+            @test local_estimators(vs, H; holomorphic=true, chunk_size=3).O ≈ O
+        end
+
+        @testset "a non-positive block size is rejected" begin
+            @test_throws ArgumentError log_derivatives(
+                a, parameters(vs), x; backend=BACKEND, chunk_size=0
+            )
         end
     end
 

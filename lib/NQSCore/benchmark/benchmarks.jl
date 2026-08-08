@@ -123,6 +123,11 @@ let rng = Xoshiro(0), nsites = 8
         @benchmarkable expect_and_grad($vs, $compiled)
     SUITE["fullsum8"]["log_derivatives, complex theta"] =
         @benchmarkable log_derivatives($a, $θ, $x; backend=BACKEND, holomorphic=true)
+    SUITE["fullsum8"]["log_derivatives, chunk_size=32"] = @benchmarkable log_derivatives(
+        $a, $θ, $x; backend=BACKEND, holomorphic=true, chunk_size=32
+    )
+    SUITE["fullsum8"]["expect_and_grad, chunk_size=32"] =
+        @benchmarkable expect_and_grad($vs, $compiled; chunk_size=32)
     SUITE["fullsum8"]["probabilities"] = @benchmarkable probabilities($vs)
 end
 
@@ -145,6 +150,10 @@ let rng = Xoshiro(5), nsites = 12
         @benchmarkable local_energy($vs, $H, $states)
     SUITE["fullsum12"]["local_energy, precompiled"] =
         @benchmarkable local_energy($vs, $compiled, $states)
+    # A fresh state has no buffers to reuse and no compiled operator to keep, which is what an
+    # optimization loop looked like before the kernel was cached on the state.
+    SUITE["fullsum12"]["local_energy, no buffer reuse"] =
+        @benchmarkable local_energy(fullsum($a, $θ), $H, $states)
     SUITE["fullsum12"]["probabilities"] = @benchmarkable probabilities($vs)
 end
 

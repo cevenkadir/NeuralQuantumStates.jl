@@ -137,6 +137,10 @@ The gradient is the usual variational-Monte-Carlo estimator
 with `O_k` the log-derivatives from [`log_derivatives`](@ref). The subtraction of
 `⟨O_k^*⟩⟨E_loc⟩` is not cosmetic: without it the estimator has a non-vanishing variance even at
 an exact eigenstate.
+
+`O` is never built: the gradient is one contraction of it, obtained as the gradient of a scalar.
+Pass `chunk_size` to bound the memory of that differentiation pass by splitting the sample axis;
+the answer does not change.
 """
 function expect_and_grad end
 

@@ -58,6 +58,18 @@ pass rather than two halves the cost, since the two share all of their intermedi
   holomorphic form is a shortcut that is silently wrong when the ansatz does not satisfy it, so
   it must be asked for explicitly.
 
+# Chunking
+
+`O` is `(n_samples, n_parameters)`, and for a real network with many samples that matrix is the
+memory wall. `chunk_size` splits the sample axis into blocks and differentiates them one at a
+time, so the *intermediate* memory of a differentiation pass is bounded by the block rather than
+by the batch. The result is identical either way.
+
+It is not free: several smaller passes cost more than one large one, and the returned `O` is
+still the full matrix, so this only helps when the peak inside the pass is what is hurting.
+Leave it at `nothing` unless you are memory-bound. To avoid materializing `O` at all, use
+[`energy_gradient`](@ref) — for a plain gradient nothing else is needed.
+
 # Backend
 
 Differentiation goes through DifferentiationInterface.jl, so `backend` is any of its objects —
@@ -66,10 +78,25 @@ here; load the one you want and pass it.
 """
 function log_derivatives(
     ansatz::AbstractAnsatz, θ, x::AbstractMatrix;
-    backend, holomorphic::Bool=false
+    backend, holomorphic::Bool=false, chunk_size=nothing
 )
     flat, restore = flatten_parameters(θ)
-    return _log_derivatives(ansatz, flat, restore, x, backend, holomorphic)
+    chunk_size === nothing &&
+        return _log_derivatives(ansatz, flat, restore, x, backend, holomorphic)
+    return reduce(vcat, (
+        _log_derivatives(ansatz, flat, restore, view(x, :, r), backend, holomorphic)
+        for r in _chunks(size(x, 2), chunk_size)
+    ))
+end
+
+"""
+    _chunks(n, chunk_size)
+
+Ranges covering `1:n` in blocks of at most `chunk_size`, the last one short where it must be.
+"""
+function _chunks(n::Integer, chunk_size::Integer)
+    chunk_size > 0 || throw(ArgumentError("chunk_size must be positive, got $chunk_size"))
+    return (i:min(i + chunk_size - 1, n) for i in 1:chunk_size:n)
 end
 
 """Real parameters: one pass over the stacked real and imaginary parts of `log ψ`."""
@@ -166,11 +193,22 @@ the matrix itself and not just this one contraction of it.
 """
 function energy_gradient(
     ansatz::AbstractAnsatz, θ, x::AbstractMatrix, E::AbstractVector,
-    weights::Union{Nothing,AbstractVector}; backend
+    weights::Union{Nothing,AbstractVector}; backend, chunk_size=nothing
 )
     flat, restore = flatten_parameters(θ)
+    # The cotangent is built from *all* samples before any splitting: it carries the mean local
+    # energy, which a single chunk cannot know.
     c = _gradient_cotangent(E, weights)
-    ∇ = _energy_gradient(ansatz, flat, restore, x, c, backend)
+    ∇ = if chunk_size === nothing
+        _energy_gradient(ansatz, flat, restore, x, c, backend)
+    else
+        # The loss is a sum over samples, so its gradient is the sum of the chunks' gradients —
+        # no reweighting, and the result is identical to the unchunked one up to associativity.
+        sum(
+            _energy_gradient(ansatz, flat, restore, view(x, :, r), view(c, r), backend)
+            for r in _chunks(size(x, 2), chunk_size)
+        )
+    end
     return _match_parameter_shape(∇, flat, restore)
 end
 
