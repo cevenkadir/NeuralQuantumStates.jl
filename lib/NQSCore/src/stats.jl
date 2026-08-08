@@ -131,6 +131,11 @@ autocorrelation model at all; with a single chain it falls back to the autocorre
 standard error.
 """
 function statistics(values::AbstractMatrix)
+    # [`integrated_autocorrelation`](@ref) walks lags sequentially and indexes elements, and
+    # split-R̂ reduces over halves of each chain. None of that vectorizes, so the data comes to
+    # the host in one transfer rather than being probed element by element wherever the local
+    # energies happened to be computed. On the host this is free.
+    values = to_host(values)
     total = vec(values)
     μ = mean(total)
     σ² = var(total)

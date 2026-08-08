@@ -191,6 +191,24 @@ end
             @test s.error_of_mean == 0.0
         end
 
+        @testset "data is fetched, not probed" begin
+            # `statistics` walks lags sequentially, so it brings its input to the host once.
+            # On the host that must cost nothing and change nothing — a copy here would be a
+            # full sample array per call, and `to_host` returning something other than the
+            # original would break the samplers that write back into what they were given.
+            v = randn(Xoshiro(0), 64)
+            m = reshape(v, :, 1)
+            @test NQSCore.to_host(v) === v
+            @test NQSCore.to_host(m) === m
+            @test statistics(m).mean ≈ statistics(v).mean
+
+            # A non-`Array` input is copied rather than indexed in place.
+            sub = view(randn(Xoshiro(1), 128), 1:64)
+            @test NQSCore.to_host(sub) isa Array
+            @test NQSCore.to_host(sub) == collect(sub)
+            @test statistics(reshape(collect(sub), :, 1)).mean ≈ mean(sub)
+        end
+
         @testset "show and isapprox" begin
             s = Stats(1.25, 0.01, 0.5, 1.2, 1.001)
             str = sprint(show, s)
