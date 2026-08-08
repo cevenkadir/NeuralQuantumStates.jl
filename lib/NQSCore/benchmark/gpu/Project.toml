@@ -1,0 +1,22 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
+NQSAnsatze = "0fa8ea8c-8554-40bd-8978-b36539e7137d"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+NQSOptimisers = "e6f1cb06-4e28-4e31-bf31-96dd4dd6e02d"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+
+[sources]
+ConnectedBasisConfigurations = {path = "../../../ConnectedBasisConfigurations"}
+NQSAnsatze = {path = "../../../NQSAnsatze"}
+NQSCore = {path = "../.."}
+NQSOptimisers = {path = "../../../NQSOptimisers"}

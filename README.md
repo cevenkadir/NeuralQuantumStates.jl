@@ -119,7 +119,7 @@ kernel. See the
 
 ### Further goals
 - [ ] Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
-- [ ] GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl).
+- [ ] GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl). The array path is written to be device-generic and a CUDA extension supplies the solver behaviour cuSOLVER lacks, but **none of it has yet run on a GPU** — `lib/NQSCore/benchmark/gpu` is the suite that will say whether it works and whether it is worth it. Metal is ruled out for now: Apple GPUs have no Float64 and no complex linear solve, and the stack is `ComplexF64` throughout.
 
 ## License
 
