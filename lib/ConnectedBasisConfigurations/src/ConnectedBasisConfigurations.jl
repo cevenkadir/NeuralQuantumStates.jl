@@ -79,8 +79,10 @@ include("local_operators.jl")
 include("compile.jl")
 include("connected.jl")
 include("unpack.jl")
+include("flat.jl")
 
 export compile, CompiledOperator, CompiledSector, max_conn_size
+export flatten, FlatOperator
 export connected, connected_padded, connected_padded!
 export configurations, packed
 export local_operators, local_values, local_dimension
