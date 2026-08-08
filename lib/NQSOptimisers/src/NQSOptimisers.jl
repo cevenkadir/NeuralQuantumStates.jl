@@ -28,13 +28,18 @@ geometric tensor carries the same factor, and dividing by it undoes the suppress
   singular.
 - [`optimize!`](@ref) — a minimal driver.
 
-# The solver seam and BatchSolve.jl
+# The solver seam
 
 Linear solves go through [`AbstractLinearSolver`](@ref) rather than a hardcoded call, which is
-where a batched GPU solver would attach as a package extension. That is deliberately not wired
-up: whether BatchSolve.jl's batched path beats a plain Cholesky or CG on a realistic geometric
-tensor is an open question, and a batched solver is only a win if the batching pays for itself
-here. Benchmark before committing to it.
+where a GPU solver attaches as a package extension. `ConjugateGradientSolver` needs only
+matrix-vector products, so paired with [`QuantumGeometricTensor`](@ref) it never asks for the
+square matrix at all — which is what makes the geometric tensor of a real network tractable, on
+a device or off one.
+
+A note for anyone reading an earlier version of this file: the seam was once described as the
+place a *batched* solver such as BatchSolve.jl would attach. That was a misreading. BatchSolve
+solves many small independent problems at once; stochastic reconfiguration solves one large
+Hermitian system per step, and has nothing to batch over.
 
 # Not yet here
 
@@ -61,10 +66,12 @@ using NQSCore: expect_and_grad, local_estimators, match_parameter_shape, paramet
 using NQSCore: precondition, resample!, setparameters!, statistics, weighted_statistics
 
 include("solvers.jl")
+include("qgt.jl")
 include("sr.jl")
 
 export AbstractLinearSolver, solve
 export CholeskySolver, PseudoInverseSolver, ConjugateGradientSolver
+export QuantumGeometricTensor, to_dense
 export StochasticReconfiguration, Identity, precondition, optimize!
 
 end # module NQSOptimisers

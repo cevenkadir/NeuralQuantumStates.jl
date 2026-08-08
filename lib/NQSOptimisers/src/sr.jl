@@ -36,8 +36,18 @@ suppression.
   magnitude as it changes during a run. See `_regularize`.
 - `solver`: an [`AbstractLinearSolver`](@ref).
 - `mode`: `:sr` builds the `P × P` matrix `S`, `:minsr` builds the `N × N` matrix instead (see
-  below), and `:auto` picks whichever is smaller.
+  below), `:matrixfree` builds neither, and `:auto` picks whichever of the first two is smaller.
 - `holomorphic`: passed through to `log_derivatives`.
+- `chunk_size`: passed through to `local_estimators`, bounding the memory of the
+  log-derivative differentiation pass. `nothing` disables it.
+
+# `:matrixfree`
+
+Both `:sr` and `:minsr` form a square matrix — `P × P` or `2N × 2N` — and for a real network
+that matrix, not the sampling, is what exhausts memory first. `:matrixfree` wraps the design
+matrix in a [`QuantumGeometricTensor`](@ref) whose only operation is multiplication, and hands
+that to an iterative solver, so nothing square is ever allocated. It requires
+[`ConjugateGradientSolver`](@ref); a direct solver has nothing to factorize.
 
 # The two forms are the same update
 
@@ -54,22 +64,26 @@ For a neural network with far more parameters than samples, which is the usual c
 second is dramatically cheaper. That form is the kernel trick, known in this context as MinSR
 or SRt.
 """
-struct StochasticReconfiguration{S<:AbstractLinearSolver} <: AbstractPreconditioner
+struct StochasticReconfiguration{S<:AbstractLinearSolver,C} <: AbstractPreconditioner
     diag_shift::Float64
     diag_scale::Float64
     solver::S
     mode::Symbol
     holomorphic::Bool
+    chunk_size::C
 
     function StochasticReconfiguration(;
         diag_shift::Real=0.01, diag_scale::Real=0.0, solver::S=CholeskySolver(),
-        mode::Symbol=:auto, holomorphic::Bool=false
-    ) where {S<:AbstractLinearSolver}
-        mode in (:sr, :minsr, :auto) ||
-            throw(ArgumentError("mode must be :sr, :minsr or :auto, got :$mode"))
+        mode::Symbol=:auto, holomorphic::Bool=false, chunk_size::C=nothing
+    ) where {S<:AbstractLinearSolver,C}
+        mode in (:sr, :minsr, :matrixfree, :auto) || throw(ArgumentError(
+            "mode must be :sr, :minsr, :matrixfree or :auto, got :$mode"
+        ))
         diag_shift >= 0 || throw(ArgumentError("diag_shift must be non-negative"))
         diag_scale >= 0 || throw(ArgumentError("diag_scale must be non-negative"))
-        return new{S}(Float64(diag_shift), Float64(diag_scale), solver, mode, holomorphic)
+        return new{S,C}(
+            Float64(diag_shift), Float64(diag_scale), solver, mode, holomorphic, chunk_size
+        )
     end
 end
 
@@ -140,7 +154,7 @@ set of samples.
 function NQSCore.precondition(
     sr::StochasticReconfiguration, vs::AbstractVariationalState, operator
 )
-    est = local_estimators(vs, operator; holomorphic=sr.holomorphic)
+    est = local_estimators(vs, operator; holomorphic=sr.holomorphic, chunk_size=sr.chunk_size)
     X, ε = _weighted_design(est.O, est.E, est.weights)
 
     n_rows, n_params = size(X)
@@ -148,7 +162,14 @@ function NQSCore.precondition(
 
     gradient = 2 .* (transpose(X) * ε)
 
-    δ = if mode === :sr
+    δ = if mode === :matrixfree
+        sr.solver isa ConjugateGradientSolver || throw(ArgumentError(
+            "mode=:matrixfree never forms the geometric tensor, so it needs a solver that " *
+            "only multiplies by it; got $(typeof(sr.solver)). Use ConjugateGradientSolver, " *
+            "or :sr / :minsr for a direct solver."
+        ))
+        solve(sr.solver, QuantumGeometricTensor(X, sr.diag_scale), gradient, sr.diag_shift)
+    elseif mode === :sr
         A = _regularize(transpose(X) * X, sr.diag_shift, sr.diag_scale)
         solve(sr.solver, A, gradient, sr.diag_shift)
     else

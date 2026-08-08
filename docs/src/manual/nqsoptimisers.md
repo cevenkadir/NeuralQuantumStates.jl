@@ -48,6 +48,23 @@ of cost. For a network with far more parameters than samples, which is the usual
 second is dramatically cheaper. That is the kernel trick, known here as MinSR or SRt. `:auto`
 picks whichever matrix is smaller.
 
+### A third form, which builds neither
+
+Both of those allocate a square matrix, and for a large enough network that matrix — not the
+sampling — is what runs out of memory first. `mode=:matrixfree` allocates neither: it wraps the
+design matrix in a [`QuantumGeometricTensor`](@ref), whose only operation is multiplication, and
+hands that to [`ConjugateGradientSolver`](@ref), which needs nothing else.
+
+The cost moves from one factorization to one matrix-vector product per solver iteration. Which
+is cheaper depends on the shape and on how quickly the solve converges: for a `1024 × 4096`
+design matrix, forming ``X^T X`` costs about as much as fifty matrix-free products, so the
+iterative route wins outright if the solver converges in fewer than that — and it never
+allocates the 134 MB the tensor itself would need. For a small model, forming the matrix is
+cheaper, and `:sr` remains the right default.
+
+A direct solver has nothing to factorize in this mode and is rejected with an error rather than
+silently materializing the matrix behind your back.
+
 ## Regularization, and what it is not for
 
 The geometric tensor is routinely singular: redundant parameter directions and directions no
@@ -73,10 +90,12 @@ Which one matters, because the system being solved is genuinely singular.
 | [`PseudoInverseSolver`](@ref) | **Projects out** small singular directions rather than inflating them |
 | [`ConjugateGradientSolver`](@ref) | Iterative; needs only matrix-vector products, so it scales |
 
-The [`AbstractLinearSolver`](@ref) interface is also the seam where a batched GPU solver such as
-BatchSolve.jl would attach. That is deliberately not wired up: whether a batched path beats a
-plain Cholesky or CG on a realistic geometric tensor is an open question, and batching is only a
-win if it pays for itself here.
+The [`AbstractLinearSolver`](@ref) interface is also the seam where a GPU solver attaches.
+[`ConjugateGradientSolver`](@ref) needs only matrix-vector products, so pairing it with
+`mode=:matrixfree` — which wraps the design matrix in a [`QuantumGeometricTensor`](@ref) instead
+of forming `S` — means neither the `P × P` nor the `2N × 2N` matrix is ever allocated. For a
+network with many parameters that is the difference between a run that fits in memory and one
+that does not.
 
 ## Not yet here
 

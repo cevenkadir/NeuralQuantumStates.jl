@@ -93,6 +93,78 @@ end
         end
     end
 
+    @testset "the geometric tensor need not be built" begin
+        X = randn(Xoshiro(21), 24, 9)
+        v = randn(Xoshiro(22), 9)
+        dense = transpose(X) * X
+
+        @testset "it multiplies like the matrix it stands for" begin
+            S = QuantumGeometricTensor(X)
+            @test size(S) == (9, 9)
+            @test size(S, 1) == 9 && size(S, 2) == 9
+            @test eltype(S) === Float64
+            @test to_dense(S) ≈ dense
+            @test S * v ≈ dense * v
+        end
+
+        @testset "the relative shift lands on the diagonal" begin
+            S = QuantumGeometricTensor(X, 0.25)
+            expected = dense + 0.25 * Diagonal(diag(dense))
+            @test to_dense(S) ≈ expected
+            @test S * v ≈ expected * v
+        end
+    end
+
+    @testset "matrix-free SR agrees with the built matrix" begin
+        # :matrixfree never allocates the P x P tensor, so it must be checked against the mode
+        # that does. Anything beyond solver tolerance is an implementation error.
+        dof, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.9, h_z=0.1)
+
+        for shift in (1e-2, 1e-4), scale in (0.0, 0.1)
+            _, δ_sr = precondition(
+                StochasticReconfiguration(; diag_shift=shift, diag_scale=scale, mode=:sr,
+                    solver=PseudoInverseSolver(; rtol=1e-14)), fresh_state(dof, nsites), H)
+            _, δ_mf = precondition(
+                StochasticReconfiguration(; diag_shift=shift, diag_scale=scale,
+                    mode=:matrixfree,
+                    solver=ConjugateGradientSolver(; tol=1e-14, maxiter=5000)),
+                fresh_state(dof, nsites), H)
+            @test δ_sr ≈ δ_mf rtol = 1e-5
+        end
+
+        @testset "it reaches the ground state too" begin
+            E_exact = exact_ground_energy(H, dof, nsites)
+            vs = fresh_state(dof, nsites)
+            optimize!(vs, H, StochasticReconfiguration(;
+                    diag_shift=1e-3, mode=:matrixfree,
+                    solver=ConjugateGradientSolver(; tol=1e-12));
+                iterations=800, learning_rate=0.1)
+            @test isapprox(real(expect(vs, H).mean), E_exact; atol=1e-5)
+        end
+
+        @testset "a direct solver has nothing to factorize" begin
+            for solver in (CholeskySolver(), PseudoInverseSolver())
+                @test_throws ArgumentError precondition(
+                    StochasticReconfiguration(; mode=:matrixfree, solver=solver),
+                    fresh_state(dof, nsites), H)
+            end
+        end
+    end
+
+    @testset "chunking does not change the update" begin
+        dof, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.9, h_z=0.1)
+        _, plain = precondition(
+            StochasticReconfiguration(; diag_shift=1e-3), fresh_state(dof, nsites), H)
+        for cs in (1, 5, 7)
+            _, chunked = precondition(
+                StochasticReconfiguration(; diag_shift=1e-3, chunk_size=cs),
+                fresh_state(dof, nsites), H)
+            @test chunked ≈ plain
+        end
+    end
+
     @testset "the update descends" begin
         # A preconditioned direction must still be a descent direction: its overlap with the
         # plain gradient has to be positive, or the "improvement" is an accident of step size.
@@ -171,6 +243,7 @@ end
 
     @testset "input validation" begin
         @test_throws ArgumentError StochasticReconfiguration(; mode=:nonsense)
+        @test StochasticReconfiguration(; mode=:matrixfree).mode === :matrixfree
         @test_throws ArgumentError StochasticReconfiguration(; diag_shift=-1.0)
     end
 end
