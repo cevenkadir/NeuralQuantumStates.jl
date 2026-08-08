@@ -65,6 +65,25 @@ cheaper, and `:sr` remains the right default.
 A direct solver has nothing to factorize in this mode and is rejected with an error rather than
 silently materializing the matrix behind your back.
 
+### On a GPU
+
+Loading `CUDA` alongside this package brings in an extension that changes exactly two things,
+because everything else already works on a device array unchanged:
+
+- `CholeskySolver`'s indefinite fallback uses conjugate gradients instead of Bunch–Kaufman,
+  which cuSOLVER does not provide. The Cholesky path itself needs no help.
+- `PseudoInverseSolver` refuses to run. `LinearAlgebra.pinv` has no CUDA method, and the generic
+  fallback would process singular values by scalar indexing — a host round-trip per element, or
+  an outright error. Better to say so than to appear to work.
+
+`ConjugateGradientSolver` needs nothing: it only multiplies, and with `:matrixfree` there is no
+square matrix to keep on the device in the first place.
+
+!!! warning "Not yet run on hardware"
+    The device paths are written and their dispatch is tested, but no part of this stack has
+    executed on a GPU. Treat the first run as an experiment; `lib/NQSCore/benchmark/gpu` exists
+    to make it a measured one.
+
 ## Regularization, and what it is not for
 
 The geometric tensor is routinely singular: redundant parameter directions and directions no

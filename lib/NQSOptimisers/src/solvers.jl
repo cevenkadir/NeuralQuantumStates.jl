@@ -38,10 +38,20 @@ function solve(::CholeskySolver, A::AbstractMatrix, b::AbstractVector, shift::Re
     M = Hermitian(A + shift * I)
     F = cholesky(M; check=false)
     issuccess(F) && return F \ b
-    # Not positive definite: the shift did not cover the zero modes. Bunch-Kaufman handles the
-    # indefinite case rather than returning a meaningless answer.
-    return bunchkaufman(M; check=false) \ b
+    return indefinite_fallback(M, A, b, shift)
 end
+
+"""
+    indefinite_fallback(M, A, b, shift) -> x
+
+What [`CholeskySolver`](@ref) does when the shift did not cover the tensor's zero modes.
+
+Bunch–Kaufman handles the indefinite case rather than returning a meaningless answer. It is
+split out because it is the one step of the solve with no accelerator equivalent — cuSOLVER
+exposes Cholesky and LU but not Bunch–Kaufman — so a GPU extension can replace exactly this
+without touching the arithmetic above it.
+"""
+indefinite_fallback(M, A, b::AbstractVector, shift::Real) = bunchkaufman(M; check=false) \ b
 
 """
     PseudoInverseSolver(; rtol=1e-10) <: AbstractLinearSolver

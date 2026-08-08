@@ -10,11 +10,18 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
 Optimisers = "3bd65402-5787-11e9-1adc-39752487f4e2"
 
+[weakdeps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+
+[extensions]
+NQSOptimisersCUDAExt = "CUDA"
+
 [sources]
 ConnectedBasisConfigurations = {path = "../ConnectedBasisConfigurations"}
 NQSCore = {path = "../NQSCore"}
 
 [compat]
+CUDA = "5.9, 6"
 Functors = "0.5"
 KrylovKit = "0.8, 0.9"
 NQSCore = "0.1"
