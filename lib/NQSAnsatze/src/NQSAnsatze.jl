@@ -41,6 +41,7 @@ module NQSAnsatze
 using LinearAlgebra
 using Random: AbstractRNG, default_rng, randn
 
+using ChainRulesCore
 using Lux
 using SymBasis
 

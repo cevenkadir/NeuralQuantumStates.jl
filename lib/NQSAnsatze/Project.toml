@@ -4,6 +4,7 @@ version = "0.1.0-DEV"
 authors = ["cevenkadir <9449257+cevenkadir@users.noreply.github.com>"]
 
 [deps]
+ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
 ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
@@ -27,6 +28,7 @@ LatticeSpaceGroups = {path = "../LatticeSpaceGroups"}
 NQSCore = {path = "../NQSCore"}
 
 [compat]
+ChainRulesCore = "1"
 ConnectedBasisConfigurations = "0.1"
 LatticeSpaceGroups = "0.1"
 Lux = "1.16"

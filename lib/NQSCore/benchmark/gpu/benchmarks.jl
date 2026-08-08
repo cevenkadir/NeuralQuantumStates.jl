@@ -197,6 +197,7 @@ let spec = Spin(1 // 2), nsites = NSITES
     vs_cpu = FullSumState(a, θ_cpu; backend=BACKEND, basis=b)
     e_cpu = timed("expect, CPU", () -> expect(vs_cpu, H))
     g_cpu = timed("expect_and_grad, CPU", () -> expect_and_grad(vs_cpu, H))
+    e_gpu = nothing              # referenced by the transfer section, which runs either way
     if θ_gpu !== nothing
         vs_gpu = FullSumState(a, θ_gpu; backend=BACKEND, basis=b)
         e_gpu = timed("expect, CUDA", () -> CUDA.@sync expect(vs_gpu, H))
@@ -236,8 +237,11 @@ let spec = Spin(1 // 2), nsites = NSITES
 
     total = sum(t for t in (t_out, t_back, t_mels) if t !== nothing; init=0.0)
     @printf("  %-46s %12s\n", "total per step", BenchmarkTools.prettytime(total * 1e9))
-    if t_gpu !== nothing
-        @printf("  %-46s %11.1f%%\n", "as a fraction of one forward pass", 100 * total / t_gpu)
+    # Against `expect`, not against the forward pass: the forward pass covers the samples
+    # alone, while `expect` covers every connected configuration, which is what actually gets
+    # transferred. Comparing to the smaller of the two would flatter the transfer cost.
+    if e_gpu !== nothing
+        @printf("  %-46s %11.1f%%\n", "as a fraction of one device expect", 100 * total / e_gpu)
     end
 
     counts = res.counts
@@ -257,18 +261,22 @@ println("\nstochastic reconfiguration, solve only")
 let n = 2048, p = 4096
     X_cpu = randn(Xoshiro(0), n, p)
     g_cpu = randn(Xoshiro(1), p)
-    cg = ConjugateGradientSolver(; tol=1e-8, maxiter=200)
+    # A shift and tolerance that actually converge. With a tighter pair the solver hits its
+    # iteration cap on both sides and the comparison measures non-convergence rather than a
+    # solve — and a real run regularizes for exactly this reason.
+    shift = 1e-2
+    cg = ConjugateGradientSolver(; tol=1e-6, maxiter=100)
 
     t_form_cpu = timed("form XᵀX, CPU  ($(p)x$(p))", () -> transpose(X_cpu) * X_cpu)
     t_mf_cpu = timed("matrix-free solve, CPU",
-                     () -> solve(cg, QuantumGeometricTensor(X_cpu), g_cpu, 1e-3))
+                     () -> solve(cg, QuantumGeometricTensor(X_cpu), g_cpu, shift))
 
     t_form_gpu, t_mf_gpu = try
         X_gpu = CuArray(X_cpu)
         g_gpu = CuArray(g_cpu)
         (timed("form XᵀX, CUDA", () -> CUDA.@sync transpose(X_gpu) * X_gpu),
          timed("matrix-free solve, CUDA",
-               () -> CUDA.@sync solve(cg, QuantumGeometricTensor(X_gpu), g_gpu, 1e-3)))
+               () -> CUDA.@sync solve(cg, QuantumGeometricTensor(X_gpu), g_gpu, shift)))
     catch err
         println("      device solve unavailable: ", first(split(sprint(showerror, err), '\n')))
         (nothing, nothing)

@@ -96,6 +96,13 @@ differentiate through.
 colocate(reference, input::AbstractArray) =
     _is_host(reference) ? input : copyto!(similar(reference, eltype(input), size(input)), input)
 
+# Moving a batch to a device is a `copyto!`, and reverse-mode AD refuses to differentiate a
+# mutation. It does not have to: `input` is the configurations, which are data rather than
+# parameters, so nothing ever needs a gradient with respect to them. Saying so explicitly is
+# what lets the gradient flow through to `θ` — which is on a different path entirely — instead
+# of stopping at the transfer.
+ChainRulesCore.@non_differentiable colocate(::Any, ::Any)
+
 _is_host(::Nothing) = true
 _is_host(::Array) = true
 function _is_host(a::AbstractArray)
