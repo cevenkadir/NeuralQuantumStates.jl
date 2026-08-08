@@ -32,9 +32,12 @@ paths here have never executed on hardware and one broken step should not hide t
 using BenchmarkTools
 using CUDA
 using ConnectedBasisConfigurations
+using cuDNN                    # Lux needs it alongside CUDA, or gpu_device() silently returns a CPU
 using DifferentiationInterface
 using LinearAlgebra
+using Functors: fmap
 using Lux
+using MLDataDevices: AbstractGPUDevice
 using NQSAnsatze
 using NQSCore
 using NQSOptimisers
@@ -45,23 +48,60 @@ using Statistics: mean
 using SymBasis
 using Zygote
 
-if !CUDA.functional()
+"""
+Whether there is a device this run can actually use, and what to say if not.
+
+`CUDA.functional()` is necessary but not sufficient: it can return true while the first attempt
+to touch the device fails — because the toolkit is too new for the card, or because the card
+itself is reporting a fault. Both have to be caught here rather than surfacing as a stacktrace
+from the middle of a benchmark.
+"""
+function device_status()
+    CUDA.functional() || return (false, "CUDA is not available on this machine")
+    try
+        dev = CUDA.device()
+        return (true, "$(CUDA.name(dev)) (compute capability $(CUDA.capability(dev)))" *
+                      "  |  CUDA $(CUDA.runtime_version())")
+    catch err
+        return (false, "a device is present but unusable — " *
+                       first(split(sprint(showerror, err), '\n')))
+    end
+end
+
+let (ok, message) = device_status()
     println()
-    println("No usable CUDA device: ", CUDA.functional(false) ? "driver present, device not usable" : "CUDA is not available here")
-    println()
-    println("This suite needs an NVIDIA GPU. Nothing else in the repository does — the CPU")
-    println("benchmarks in the parent directory run anywhere:")
-    println()
-    println("    julia --project=lib/NQSCore/benchmark lib/NQSCore/benchmark/benchmarks.jl")
-    println()
-    exit(0)
+    println(ok ? "device: $message" : "No usable CUDA device: $message")
+    if !ok
+        println()
+        println("The CPU benchmarks need none of this and run anywhere:")
+        println()
+        println("    julia --project=lib/NQSCore/benchmark lib/NQSCore/benchmark/benchmarks.jl")
+        println()
+        if CUDA.functional()
+            # A device was found and then refused. That is worth distinguishing from having no
+            # GPU at all, because it is usually fixable and always specific.
+            println("Two things commonly cause this, and they look alike from here:")
+            println()
+            println("  * The toolkit is newer than the card. CUDA 13 dropped compute")
+            println("    capability below 7.5, so a V100 (7.0), a P100 (6.0) or a T4 in a")
+            println("    CUDA 13 environment will refuse. Select an older runtime:")
+            println("        CUDA.set_runtime_version!(v\"12.6\")")
+            println("    or point at a CUDA 12 module with local_toolkit=true.")
+            println()
+            println("  * The card is reporting a fault — ERROR_ECC_UNCORRECTABLE and friends")
+            println("    are hardware, not software. Check `nvidia-smi -q | grep -i -A3 ecc`;")
+            println("    a retained uncorrectable error usually needs a GPU reset")
+            println("    (`nvidia-smi -r`, root) or simply another node.")
+            println()
+            exit(1)
+        end
+        exit(0)
+    end
 end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 3
 
 const BACKEND = AutoZygote()
-
-println("device: ", CUDA.name(CUDA.device()), "  |  CUDA ", CUDA.runtime_version())
 
 """Transverse-field Ising on a periodic chain, as an `OpSum`."""
 function tfi(nsites; J=1.0, h_x=1.0, h_z=0.0)
@@ -109,7 +149,23 @@ let spec = Spin(1 // 2), nsites = NSITES
     model = RBM(nsites, ALPHA)
     a = LuxAnsatz(model, spec, nsites; rng=Xoshiro(0))
     θ_cpu = init_parameters(a, Xoshiro(0))
+
+    # `gpu_device()` falls back to a CPU device with only a warning when its trigger packages
+    # are missing, and every "CUDA" measurement below would then quietly run on the host and
+    # report a speedup of one. A silently wrong benchmark is worse than none, so stop here.
     dev = gpu_device()
+    if !(dev isa AbstractGPUDevice)
+        println()
+        println("Lux resolved a $(typeof(dev)) rather than a GPU device, so every measurement")
+        println("below would run on the host and compare it against itself.")
+        println()
+        println("CUDA alone is not enough for Lux — cuDNN has to be loaded too. It is declared")
+        println("in this environment, so this usually means it failed to install:")
+        println()
+        println("    julia --project=lib/NQSCore/benchmark/gpu -e 'import Pkg; Pkg.instantiate()'")
+        println()
+        exit(1)
+    end
 
     println("\nmodel: RBM($nsites, $ALPHA) over $(length(b.states)) configurations, ",
             "$(sum(length, values(θ_cpu))) parameters")
@@ -119,7 +175,11 @@ let spec = Spin(1 // 2), nsites = NSITES
     t_cpu = timed("log_amplitude, CPU", () -> log_amplitude(a, θ_cpu, x))
     θ_gpu = nothing
     t_gpu = try
-        θ_gpu = dev(θ_cpu)
+        # `fmap(CuArray, ...)`, not `gpu_device()`: the latter demotes ComplexF64 to
+        # ComplexF32, which would make every comparison below a precision comparison as much
+        # as a hardware one. Single precision is the faster way to run on a GPU and worth
+        # measuring — but as a separate number, not silently folded into this one.
+        θ_gpu = fmap(CuArray, θ_cpu)
         timed("log_amplitude, CUDA", () -> CUDA.@sync log_amplitude(a, θ_gpu, x))
     catch err
         println("      moving parameters to the device failed: ",
@@ -127,6 +187,11 @@ let spec = Spin(1 // 2), nsites = NSITES
         nothing
     end
     compare("speedup", t_cpu, t_gpu)
+
+    θ_32 = fmap(y -> CuArray(ComplexF32.(y)), θ_cpu)
+    t_32 = timed("log_amplitude, CUDA (ComplexF32)",
+                 () -> CUDA.@sync log_amplitude(a, θ_32, x))
+    compare("speedup, single precision", t_cpu, t_32)
 
     println("\nlocal energy and gradient")
     vs_cpu = FullSumState(a, θ_cpu; backend=BACKEND, basis=b)
@@ -141,8 +206,15 @@ let spec = Spin(1 // 2), nsites = NSITES
 
         # Agreement matters more than speed: a device result that disagrees is not a result.
         try
-            same = isapprox(real(expect(vs_cpu, H).mean), real(expect(vs_gpu, H).mean); rtol=1e-8)
-            println("  CPU and CUDA energies agree: ", same)
+            # Tolerance follows the arithmetic: comparing a double-precision host result
+            # against a single-precision device one at 1e-8 fails on precision alone and says
+            # nothing about correctness.
+            tol = real(eltype(θ_gpu.weight)) === Float32 ? 1e-5 : 1e-10
+            ec = real(expect(vs_cpu, H).mean)
+            eg = real(expect(vs_gpu, H).mean)
+            @printf("  CPU %.12f  vs  CUDA %.12f   (relative %.2e, tolerance %.0e)\n",
+                    ec, eg, abs(ec - eg) / abs(ec), tol)
+            println("  CPU and CUDA energies agree: ", isapprox(ec, eg; rtol=tol))
         catch err
             println("  energy comparison failed: ", first(split(sprint(showerror, err), '\n')))
         end

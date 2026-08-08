@@ -70,7 +70,12 @@ Lux.statelength(::RBM) = 0
 function (layer::RBM)(x::AbstractMatrix, ps, st)
     # x is (nsites, batch); θ = W x .+ b is (nhidden, batch).
     θ = ps.weight * x .+ ps.hidden
-    logψ = transpose(ps.visible) * x .+ sum(logtwocosh, θ; dims=1)
+    # `reshape` rather than `transpose(ps.visible)`: transposing a *vector* makes the reverse
+    # pass build an `Adjoint{Transpose{Vector}}`, a wrapper cuBLAS has no method for, so
+    # LinearAlgebra silently falls back to its generic matmul — which indexes scalars and is
+    # therefore an outright error on a device array. A row-shaped reshape is the same
+    # arithmetic and stays in BLAS on both sides of the derivative.
+    logψ = reshape(ps.visible, 1, :) * x .+ sum(logtwocosh, θ; dims=1)
     return vec(logψ), st
 end
 
