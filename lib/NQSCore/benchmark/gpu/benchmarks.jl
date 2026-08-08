@@ -41,6 +41,7 @@ using MLDataDevices: AbstractGPUDevice
 using NQSAnsatze
 using NQSCore
 using NQSOptimisers
+using NQSSamplers
 using OperatorAlgebra
 using Printf
 using Random
@@ -253,6 +254,66 @@ let spec = Spin(1 // 2), nsites = NSITES
       A ratio near 1 means a device-side connected-configuration kernel would waste nothing;
       well above 1 means most of the transfer above, and most of what such a kernel would
       evaluate, is padding.""")
+end
+
+# ====================================================== sampling, which is the real loop
+
+# `FullSumState` is a testing instrument. A production run samples, and a Metropolis sampler
+# evaluates the ansatz **once per sweep step** — so with parameters on a device and samples on
+# the host, every step is a host/device round trip. Those are latency-bound, they do not
+# amortize, and there are `burn_in + n_samples * thinning` of them. This section is here to
+# find out whether that swamps the speedups measured above.
+println("\nsampling")
+
+let spec = Spin(1 // 2), nsites = NSITES
+    b = basis(dof_object(spec), nsites)
+    H = compile(tfi(nsites; h_x=0.9, h_z=0.1))
+    a = LuxAnsatz(RBM(nsites, ALPHA), spec, nsites; rng=Xoshiro(0))
+    θ_cpu = init_parameters(a, Xoshiro(0))
+    θ_gpu = fmap(CuArray, θ_cpu)
+
+    n_chains, n_samples, burn_in = 8, 200, 50
+    steps = burn_in + n_samples
+    starts = random_configurations(spec, nsites, n_chains, Xoshiro(1))
+    sampler = MetropolisSampler(LocalRule(), starts;
+        n_chains=n_chains, n_samples=n_samples, burn_in=burn_in)
+
+    @printf("  %d chains x %d samples, burn-in %d — %d ansatz evaluations of %d configurations\n",
+            n_chains, n_samples, burn_in, steps, n_chains)
+
+    s_cpu = timed("Metropolis, parameters on host",
+                  () -> NQSCore.sample(sampler, a, θ_cpu, Xoshiro(2)))
+    s_gpu = timed("Metropolis, parameters on device",
+                  () -> CUDA.@sync NQSCore.sample(sampler, a, θ_gpu, Xoshiro(2)))
+    compare("speedup", s_cpu, s_gpu)
+
+    if s_cpu !== nothing && s_gpu !== nothing
+        @printf("  %-46s %11.1f µs\n", "per sweep step, host", 1e6 * s_cpu / steps)
+        @printf("  %-46s %11.1f µs\n", "per sweep step, device", 1e6 * s_gpu / steps)
+        if s_gpu > s_cpu
+            println("""
+      The device is slower, and that is the point: a sweep evaluates the ansatz on only
+      $(n_chains) configurations, which is far too little work to cover a round trip. The
+      fix is not a faster kernel but a sampler that keeps the chains on the device.""")
+        end
+    end
+
+    # For contrast: one batched draw, where the ansatz sees the whole basis at once and there
+    # is exactly one transfer rather than one per step.
+    exact = ExactSampler(b, n_chains * n_samples)
+    e_cpu = timed("ExactSampler, parameters on host",
+                  () -> NQSCore.sample(exact, a, θ_cpu, Xoshiro(2)))
+    e_gpu = timed("ExactSampler, parameters on device",
+                  () -> CUDA.@sync NQSCore.sample(exact, a, θ_gpu, Xoshiro(2)))
+    compare("speedup", e_cpu, e_gpu)
+
+    # And the whole loop, which is what a run actually pays.
+    m_cpu = timed("MCState expect, host",
+                  () -> expect(MCState(a, θ_cpu, sampler; backend=BACKEND, rng=Xoshiro(3)), H))
+    m_gpu = timed("MCState expect, device",
+                  () -> CUDA.@sync expect(
+                      MCState(a, θ_gpu, sampler; backend=BACKEND, rng=Xoshiro(3)), H))
+    compare("speedup", m_cpu, m_gpu)
 end
 
 # ================================================= the linear algebra behind the SR solve
