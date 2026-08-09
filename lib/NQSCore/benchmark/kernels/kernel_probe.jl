@@ -4,9 +4,23 @@ Can Reactant run the connected-configuration kernel, and how fast?
 Run with
 
 ```
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.25 \\
+XLA_REACTANT_GPU_PREALLOCATE=false NQS_REACTANT_BACKEND=cpu \\
   julia --project=lib/NQSCore/benchmark/kernels lib/NQSCore/benchmark/kernels/kernel_probe.jl
 ```
+
+`NQS_REACTANT_BACKEND` picks Reactant's target and `XLA_REACTANT_GPU_MEM_FRACTION` caps its share
+of a card (`XLA_REACTANT_GPU_PREALLOCATE=false` stops it taking one up front). Those are the names
+Reactant reads — *not* the `XLA_PYTHON_CLIENT_*` ones, which belong to JAX and are ignored here.
+
+Reactant on the CPU with CUDA.jl on the device is a perfectly good configuration for this probe:
+it answers whether the kernel runs and whether it raises, which is what decides feasibility, and
+it leaves the CUDA.jl timing untouched. Only the Reactant-versus-CUDA.jl comparison needs both on
+the same hardware.
+
+`NQS_REACTANT_CUDA_DIR=/path/to/cuda-12` points Reactant's XLA at a toolkit other than the one it
+bundles. That is the lever for a card its own toolkit refuses — CUDA 13 dropped compute capability
+below 7.5, so a V100 or a GV100 gets `ptxas too old` and `BlasLt is unavailable` from a stock
+install.
 
 # Why this exists
 
@@ -51,6 +65,15 @@ let requested = get(ENV, "NQS_REACTANT_BACKEND", "")
     isempty(requested) || Reactant.set_default_backend(requested)
 end
 
+# The toolkit XLA compiles kernels with. Reactant defaults to the one inside its own artifact,
+# which on a stock install is CUDA 13 — and CUDA 13 dropped compute capability below 7.5, so a
+# GV100 (7.0) gets `ptxas too old` and `BlasLt is unavailable` before any of this code runs.
+# Pointing it at the CUDA 12 toolkit that CUDA.jl is already using on the same machine is the
+# cheapest thing to try, and this is the only knob for it.
+let dir = get(ENV, "NQS_REACTANT_CUDA_DIR", "")
+    isempty(dir) || (Reactant.XLA.CUDA_DATA_DIR[] = dir)
+end
+
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 2
 
 println()
@@ -63,9 +86,20 @@ println("XLA devices: ", try
 catch err
     "unavailable — " * first(split(sprint(showerror, err), '\n'))
 end)
+
+# Printed because it is the thing most likely to need changing, and because a stock Reactant and
+# a working CUDA.jl on the same machine can be using two different CUDA versions without saying so.
+println("Reactant's CUDA toolkit: ", Reactant.XLA.CUDA_DATA_DIR[])
+println("CUDA.jl's CUDA toolkit:  ", try
+    @eval(Main, import CUDA_Runtime_jll)
+    Main.CUDA_Runtime_jll.artifact_dir
+catch
+    "not resolvable here — `CUDA.versioninfo()` names the version"
+end)
 println("""
-Both allocators are live in this process. XLA_PYTHON_CLIENT_MEM_FRACTION caps XLA's share; if
-CUDA.jl reports out-of-memory below, that is the knob.""")
+If Reactant's XLA refuses this card, NQS_REACTANT_CUDA_DIR=<the second path> is the one lever.
+Both allocators are live in this process; XLA_REACTANT_GPU_MEM_FRACTION and
+XLA_REACTANT_GPU_PREALLOCATE cap XLA's share if CUDA.jl reports out of memory below.""")
 
 report(label, t) = @printf("  %-46s %12s\n", label, BenchmarkTools.prettytime(t * 1e9))
 note(label, what) = @printf("  %-46s %12s\n", label, what)

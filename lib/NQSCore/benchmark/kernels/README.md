@@ -26,16 +26,34 @@ the kernel touches it only through the two unchecked accessors and one equality.
 
 ```
 julia --project=lib/NQSCore/benchmark/kernels -e 'using Pkg; Pkg.instantiate()'
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.25 \
+XLA_REACTANT_GPU_PREALLOCATE=false NQS_REACTANT_BACKEND=cpu \
   julia --project=lib/NQSCore/benchmark/kernels lib/NQSCore/benchmark/kernels/kernel_probe.jl
 ```
 
-`NQS_REACTANT_BACKEND=cpu` or `=gpu` pins the target; unset, Reactant picks.
+| variable | what it does |
+|---|---|
+| `NQS_REACTANT_BACKEND` | `cpu` or `gpu`; unset, Reactant picks |
+| `XLA_REACTANT_GPU_PREALLOCATE` | `false` stops XLA taking the card up front |
+| `XLA_REACTANT_GPU_MEM_FRACTION` | XLA's share of a card, default `0.75` |
+| `NQS_REACTANT_CUDA_DIR` | a CUDA toolkit for XLA other than the one Reactant bundles |
 
-**Cap XLA's memory.** CUDA.jl and XLA are both live in this process — Reactant needs CUDA.jl
-loaded to lower a KernelAbstractions kernel at all, which is the whole subject here — and XLA
-otherwise takes the better part of every visible card at startup, leaving CUDA.jl nothing. If the
-CUDA.jl half reports out of memory, that fraction is the knob.
+Those are the names **Reactant** reads. The `XLA_PYTHON_CLIENT_*` variables are JAX's and are
+ignored here.
+
+**Reactant on CPU with CUDA.jl on the device is a valid configuration for this probe**, and the
+right one when Reactant's XLA refuses the card. It answers whether the kernel runs and whether it
+raises — which is what decides feasibility — and leaves the CUDA.jl timing untouched. Only the
+head-to-head timing needs both on the same hardware.
+
+**When Reactant's XLA refuses the card.** It compiles kernels with the toolkit inside its own
+artifact, which on a stock install is CUDA 13 — and CUDA 13 dropped compute capability below 7.5,
+so a V100 or GV100 (7.0) fails with `ptxas too old` and `BlasLt is unavailable` before any of this
+code runs. `NQS_REACTANT_CUDA_DIR` pointing at the CUDA 12 toolkit CUDA.jl is already using on the
+same machine is the one lever; the probe prints both paths so you can see whether they differ.
+
+**Cap XLA's memory when both are on the device.** CUDA.jl and XLA are both live in this process —
+Reactant needs CUDA.jl loaded to lower a KernelAbstractions kernel at all, which is the whole
+subject here — and XLA otherwise takes 75% of every visible card at startup.
 
 This is also why the probe has its own environment rather than living in `../reactant`: that one
 holds the validated 15–18× AD measurement, and adding CUDA to it would re-resolve it.
