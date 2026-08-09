@@ -13,17 +13,18 @@ environment here is separate, and CUDA is a weak dependency of `NQSOptimisers` o
 
 # What to look at first
 
-The **transfer** section, not the speedups. Connected configurations are computed on the host —
-the compiled operator is a nested structure that cannot be uploaded as it stands — so every step
-ships the samples out and the connected configurations and matrix elements back. The return leg
-is `max_conn` times larger than the outbound one, and that asymmetry is the whole question:
-if it dominates, porting the connected-configuration kernel to the device is worth the work,
-and if it does not, the split architecture is fine as it is. NetKet shipped the same split for
-years before writing device-side operators.
+`expect, CUDA` against the **transfer** section below it. Connected configurations used to be
+computed on the host — a compiled operator is a nested structure that cannot be uploaded as it
+stands — so every step shipped the samples out and the connected configurations and matrix
+elements back, the return leg being `max_conn` times larger than the outbound one. That
+asymmetry is what motivated `FlatOperator` and the device kernel, and the transfer section is
+kept as the standing measurement of what they removed: those numbers are no longer part of an
+`expect`, and the comparison says whether the work paid for itself.
 
-The `max_conn / mean(n_conn)` ratio printed alongside is the second half of the answer. At 1 the
-padding is free and a device kernel would waste nothing; well above 1 it means most of what
-would be transferred, and most of what a device kernel would evaluate, is padding.
+The `max_conn / mean(n_conn)` ratio printed alongside is now the device path's own overhead,
+since it keeps the operator's static bound rather than trimming to the largest connection count
+it saw. At 1 the padding is free; well above 1 it means most of what the kernel and the network
+evaluate is padding.
 
 Each measurement is guarded: a failure prints and the run continues, because most of the device
 paths here have never executed on hardware and one broken step should not hide the rest.
@@ -202,10 +203,28 @@ let spec = Spin(1 // 2), nsites = NSITES
     e_gpu = nothing              # referenced by the transfer section, which runs either way
     if θ_gpu !== nothing
         vs_gpu = FullSumState(a, θ_gpu; backend=BACKEND, basis=b)
+        # With parameters on the device and KernelAbstractions loaded, the connected
+        # configurations are computed there too, so this covers the device kernel and not just
+        # the network. The operator is uploaded on each call in this form.
         e_gpu = timed("expect, CUDA", () -> CUDA.@sync expect(vs_gpu, H))
         g_gpu = timed("expect_and_grad, CUDA", () -> CUDA.@sync expect_and_grad(vs_gpu, H))
         compare("expect speedup", e_cpu, e_gpu)
         compare("expect_and_grad speedup", g_cpu, g_gpu)
+
+        # The loop-friendly form: upload the operator once instead of on every call. Seven
+        # small transfers is not much against a millisecond, but an optimization run pays them
+        # once per step for as many steps as it takes, and the fix is one line at the call site.
+        H_dev = nothing
+        e_res = try
+            H_dev = to_backend(flatten(H), CUDABackend())
+            timed("expect, CUDA (operator uploaded once)",
+                  () -> CUDA.@sync expect(vs_gpu, H_dev))
+        catch err
+            println("      uploading the operator failed: ",
+                    first(split(sprint(showerror, err), '\n')))
+            nothing
+        end
+        compare("expect speedup, operator uploaded once", e_cpu, e_res)
 
         # Agreement matters more than speed: a device result that disagrees is not a result.
         try
@@ -218,6 +237,13 @@ let spec = Spin(1 // 2), nsites = NSITES
             @printf("  CPU %.12f  vs  CUDA %.12f   (relative %.2e, tolerance %.0e)\n",
                     ec, eg, abs(ec - eg) / abs(ec), tol)
             println("  CPU and CUDA energies agree: ", isapprox(ec, eg; rtol=tol))
+            if H_dev !== nothing
+                # The uploaded operator is a different code path through `_connections`, so it
+                # gets its own comparison rather than being assumed equivalent.
+                er = real(expect(vs_gpu, H_dev).mean)
+                println("  the uploaded operator gives the same energy: ",
+                        isapprox(ec, er; rtol=tol))
+            end
         catch err
             println("  energy comparison failed: ", first(split(sprint(showerror, err), '\n')))
         end
@@ -225,7 +251,11 @@ let spec = Spin(1 // 2), nsites = NSITES
 
     # ===================================================== the host/device boundary itself
 
-    println("\ntransfer, per optimization step")
+    # This section measured the case for the device kernel, and now measures what it removed:
+    # with the connections computed on the device, none of these transfers happens during an
+    # `expect`. They are kept because they are the standing answer to "was that worth it" —
+    # the numbers below, against the `expect, CUDA` above, are the whole argument.
+    println("\ntransfer per step, as it was before the device kernel")
     res = connected_padded(H, b.states)
     height, batch = size(res.configs)
     xp = configurations(spec, vec(res.configs), nsites)
@@ -239,11 +269,10 @@ let spec = Spin(1 // 2), nsites = NSITES
 
     total = sum(t for t in (t_out, t_back, t_mels) if t !== nothing; init=0.0)
     @printf("  %-46s %12s\n", "total per step", BenchmarkTools.prettytime(total * 1e9))
-    # Against `expect`, not against the forward pass: the forward pass covers the samples
-    # alone, while `expect` covers every connected configuration, which is what actually gets
-    # transferred. Comparing to the smaller of the two would flatter the transfer cost.
+    # The samples still cross: `expect` unpacks them on the host to get `log ψ(s)`, and only the
+    # connected configurations — the array `max_conn` times larger — now stay on the device.
     if e_gpu !== nothing
-        @printf("  %-46s %11.1f%%\n", "as a fraction of one device expect", 100 * total / e_gpu)
+        @printf("  %-46s %11.1f%%\n", "against one device expect today", 100 * total / e_gpu)
     end
 
     counts = res.counts
@@ -252,9 +281,10 @@ let spec = Spin(1 // 2), nsites = NSITES
     @printf("  %-46s %12.2f\n", "padding ratio max_conn / mean(n_conn)",
             max_conn_size(H) / mean(counts))
     println("""
-      A ratio near 1 means a device-side connected-configuration kernel would waste nothing;
-      well above 1 means most of the transfer above, and most of what such a kernel would
-      evaluate, is padding.""")
+      A ratio near 1 means the device kernel wastes nothing; well above 1 means most of what
+      it evaluates, and most of what the transfers above carried, is padding. The device path
+      keeps the full static bound rather than trimming to the largest count it saw, so this
+      ratio is exactly its overhead.""")
 end
 
 # ======================================== connected configurations, host versus device kernel
@@ -304,18 +334,42 @@ let spec = Spin(1 // 2), nsites = NSITES
         println("  device kernel FAILED: ", first(split(sprint(showerror, err), '\n')))
     end
 
+    # The unpacking that turns packed states into the network's input. On the host it produces
+    # `Rational`s, which no accelerator can hold, so the float conversion is a second full-size
+    # array before anything is transferred; the device kernel writes the float directly.
+    host_x = configurations(spec, vec(host_c), nsites)
+    dev_x = dev_values = ok_x = nothing
+    try
+        dev_values = CuArray(collect(Float64, local_values(spec)))
+        dev_x = CuArray{Float64}(undef, nsites, h * n)
+        configurations!(dev_x, dev_values, dev_c, nsites, CUDABackend())
+        ok_x = Array(dev_x) == Float64.(host_x)
+        println("  device unpacking matches the host unpacking: ", ok_x)
+    catch err
+        println("  device unpacking FAILED: ", first(split(sprint(showerror, err), '\n')))
+    end
+
     t_host = timed("connections on host (kernel only)",
                    () -> connected_padded!(host_c, host_m, host_k, flat, states))
-    t_move = timed("...plus moving the results to the device",
+    t_move = timed("...plus unpacking and moving the results",
                    () -> CUDA.@sync (CuArray(Float64.(configurations(spec, vec(host_c), nsites)));
                                      CuArray(host_m)))
     if ok
         t_dev = timed("connections on device",
                       () -> CUDA.@sync connected_padded!(
                           dev_c, dev_m, dev_k, dev_flat, dev_states, CUDABackend()))
+        t_unpack = ok_x === true ?
+                   timed("...plus unpacking on device",
+                         () -> CUDA.@sync begin
+                             connected_padded!(dev_c, dev_m, dev_k, dev_flat, dev_states,
+                                               CUDABackend())
+                             configurations!(dev_x, dev_values, dev_c, nsites, CUDABackend())
+                         end) : nothing
         if t_host !== nothing && t_move !== nothing && t_dev !== nothing
             compare("against host kernel alone", t_host, t_dev)
             compare("against host kernel plus transfer", t_host + t_move, t_dev)
+            t_unpack === nothing ||
+                compare("whole path, host versus device", t_host + t_move, t_unpack)
         end
     end
 end
