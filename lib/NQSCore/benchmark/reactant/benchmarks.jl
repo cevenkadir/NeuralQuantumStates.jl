@@ -145,9 +145,14 @@ for BLAS calls" arrived two hundred lines below its own headline. Reactant print
 StableHLO module and then the XLA diagnostic. Neither middle has ever been the answer, and a
 report nobody scrolls to the end of is not a report.
 """
-function abridged(text, head::Int=4, tail::Int=25)
-    lines = split(text, '\n')
-    length(lines) <= head + tail + 1 && return text
+function abridged(text, head::Int=4, tail::Int=25, width::Int=400)
+    # Long lines are clipped before long files are, because the two failure modes are different
+    # and only one of them is fixed by taking fewer lines. Reactant reports a rejected XLA option
+    # by listing every option it *would* have accepted — one line, twenty thousand characters —
+    # where the name that was rejected sits in the first eighty.
+    clip(l) = length(l) <= width ? l : l[1:prevind(l, width)] * " … [$(length(l)) chars]"
+    lines = map(clip, split(text, '\n'))
+    length(lines) <= head + tail + 1 && return join(lines, '\n')
     elided = length(lines) - head - tail
     return join(vcat(lines[1:head], ["", "  … $elided lines elided …", ""],
                      lines[(end-tail+1):end]), '\n')
