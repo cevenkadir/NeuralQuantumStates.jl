@@ -132,10 +132,7 @@ function _log_derivatives(
     ∂imψ_∂reθ = @view J[(batch+1):(2batch), 1:n]
     O_re = ∂reψ_∂reθ .+ im .* ∂imψ_∂reθ
 
-    if holomorphic
-        # For a holomorphic ψ, differentiating along the real axis is the full derivative.
-        return O_re
-    end
+    holomorphic && return O_re
 
     ∂reψ_∂imθ = @view J[1:batch, (n+1):(2n)]
     ∂imψ_∂imθ = @view J[(batch+1):(2batch), (n+1):(2n)]
@@ -202,8 +199,7 @@ function energy_gradient(
     ∇ = if chunk_size === nothing
         _energy_gradient(ansatz, flat, restore, x, c, backend)
     else
-        # The loss is a sum over samples, so its gradient is the sum of the chunks' gradients —
-        # no reweighting, and the result is identical to the unchunked one up to associativity.
+        # The loss is a sum over samples, so its gradient is the sum of the chunks' gradients.
         sum(
             _energy_gradient(ansatz, flat, restore, view(x, :, r), view(c, r), backend)
             for r in _chunks(size(x, 2), chunk_size)

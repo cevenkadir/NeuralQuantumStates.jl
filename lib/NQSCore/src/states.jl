@@ -19,21 +19,17 @@ end
 
 Unpack packed states into the `(nsites, batch)` numeric array an ansatz consumes.
 
-This is the boundary between the two representations: packed integers are what the operator
-kernel and the samplers work in, numeric arrays are what an ansatz consumes. Entry points that
-need both the configurations and their log-amplitudes build this once and pass it along, rather
-than rebuilding it for each consumer.
+Packed integers are what the operator kernel and the samplers work in; numeric arrays are what
+an ansatz consumes. Entry points needing both the configurations and their log-amplitudes build
+this once and pass it along.
 
-Where it is built follows the *parameters*, not the samples: the array this returns is an input
-to the ansatz, and an ansatz runs where its parameters are. On a host that is the loop over
-digits below. On a device — with KernelAbstractions loaded — it is the same kernel the connected
-configurations go through, which matters more than its size suggests, because this array is
-consumed twice: once for `log ψ` and once inside the differentiated loss, where a host-to-device
-conversion would sit in the middle of an automatic-differentiation pass.
-
-Its element type follows the parameters as well, through [`NQSCore.input_type`](@ref). This is
-the one batch built ahead of a derivative, and it is the only one that asks — see there for the
-measurement, and for why the forward-only batches are deliberately left alone.
+Both where it is built and what type it holds follow the *parameters*: the array is an input to
+the ansatz, and an ansatz runs where its parameters are. With KernelAbstractions loaded and
+parameters on a device, it is built there by the same kernel the connected configurations go
+through — which matters more than its size suggests, since this array is consumed twice, once
+for `log ψ` and once inside the differentiated loss. The element type comes from
+[`NQSCore.input_type`](@ref); this is the only batch that asks, because it is the only one a
+derivative follows.
 """
 function configurations_of(vs::AbstractVariationalState, states::AbstractArray)
     flat = vec(states)
@@ -59,12 +55,10 @@ _configurations(
 
 Any array among the parameters, whose type says where the ansatz expects to be run.
 
-Parameters are the only thing in a variational state that a caller deliberately places
-somewhere. The samples are packed integers with no opinion, and the ansatz is a functional form
-with none either, so asking the parameters is how anything here learns which memory it is
-working in — without a device field to keep in sync, and without naming a GPU package.
-
-`nothing` when there is no array to ask, which is a perfectly ordinary answer: it means the host.
+The parameters are the only thing a caller deliberately places somewhere — samples are packed
+integers and an ansatz is a functional form — so asking them is how this package learns which
+memory it is in, with no device field to keep in sync and no GPU package named. `nothing` means
+the host.
 """
 _reference_array(θ) = nothing
 _reference_array(θ::NamedTuple) = isempty(θ) ? nothing : _reference_array(first(values(θ)))
@@ -81,16 +75,10 @@ log_amplitudes(vs::AbstractVariationalState, states::AbstractArray) =
 """
 Put `mels` on the same device as `like`, moving nothing when it is already there.
 
-Only one of the four combinations needs work: host matrix elements against device
-log-amplitudes, which is what the host connected-configuration kernel produces when the ansatz
-runs on a device. `copyto!` into a `similar` of the log-amplitudes does that using nothing but
-Base, which is why the local-energy kernel needs no GPU dependency to be GPU-ready.
-
-The other three are deliberately left alone. On the host, broadcasting a real matrix-element
-array against complex log-amplitudes promotes elementwise for free, and materializing a
-converted copy would be a full `(max_conn, batch)` allocation bought for nothing. When *both*
-are already on a device — which is what the device kernel gives — a copy would be the same
-allocation, paid on the more expensive memory.
+Only host matrix elements against device log-amplitudes need work, and `copyto!` into a
+`similar` of the log-amplitudes does it with nothing but Base — which is why the local-energy
+kernel needs no GPU dependency to be GPU-ready. The other three combinations are already
+correct, and copying would cost a full `(max_conn, batch)` allocation for nothing.
 """
 _colocate(::Array, mels::Array) = mels
 _colocate(like::AbstractArray, mels::Array) =
@@ -102,15 +90,11 @@ _colocate(::AbstractArray, mels::AbstractArray) = mels
 
 Bring `x` into host memory, leaving it alone when it is already there.
 
-The mirror of `_colocate`, and it exists for the samplers. Accepting or rejecting a Metropolis
-proposal, and searching an inverse cumulative distribution, are scalar sequential decisions —
-run against a device array they are either an outright error or one round trip per element. The
-quantities they branch on are small, one number per chain or per basis state, so fetching them
-in a single transfer is the cheap half of that trade.
-
-It does not make a sampler *fast* on a device: a Metropolis sweep still pays one transfer per
-step, and the answer to that is a sampler that keeps its chains on the device rather than a
-better transfer. It makes one work, and makes the cost measurable.
+The mirror of `_colocate`, and it exists for the samplers. Accepting a Metropolis proposal or
+searching an inverse cumulative distribution are scalar sequential decisions, which against a
+device array are either an error or one round trip per element. The quantities they branch on
+are small — one number per chain or per basis state — so fetching them in a single transfer is
+the cheap half of that trade.
 """
 to_host(x::Array) = x
 to_host(x::AbstractArray) = Array(x)
@@ -118,27 +102,22 @@ to_host(x::AbstractArray) = Array(x)
 """
     local_energy(state, operator, packed_states) -> AbstractArray
 
-Local energies `E_loc(s) = Σ_{s'} ⟨s|Ô|s'⟩ ψ(s')/ψ(s)`.
+Local energies `E_loc(s) = Σ_{s'} ⟨s|Ô|s'⟩ ψ(s')/ψ(s)`, defaulting to the state's current
+[`samples`](@ref).
 
-The ratio is evaluated as `exp(log ψ(s') - log ψ(s))`, never as a quotient of amplitudes. That
-is not a micro-optimization: amplitudes underflow to zero for any system worth studying, while
-the *difference* of their logarithms stays perfectly well behaved.
+The sum runs only over the configurations the operator connects to `s`, which for a local
+Hamiltonian is a handful rather than the whole Hilbert space. The ratio is evaluated as
+`exp(log ψ(s') - log ψ(s))`, never as a quotient of amplitudes, which would underflow for any
+system worth studying.
 
-Multi-chain samples arrive as a `(steps, chains)` array, and the result keeps that shape, so
-the chain structure survives into [`statistics`](@ref) — which needs it for split-R̂ and for a
-between-chain error bar. Flattening happens here rather than in the sampler, leaving the chain
-layout the sampler's business.
+Multi-chain samples arrive as a `(steps, chains)` array and the result keeps that shape, so the
+chain structure survives into [`statistics`](@ref), which needs it for split-R̂ and for a
+between-chain error bar.
 
-`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts. Passing a
-`compile`d operator skips recompiling it on every call, which is worth doing inside an
-optimization loop and irrelevant for a single large batch, where the connected-configuration
-kernel dominates.
-
-When the ansatz's parameters live on a device and KernelAbstractions is loaded, the connected
-configurations are computed there too — see [`connections`](@ref). That path re-uploads the
-operator on every call unless it is already resident, so a loop can hand over
-`to_backend(flatten(H), backend)` once, exactly as it would `compile` on the host. Measured, it
-is worth 1.5%: seven small transfers are not much beside a millisecond of network.
+`operator` is anything `ConnectedBasisConfigurations.connected_padded` accepts; a `compile`d one
+skips recompiling on every call. With parameters on a device and KernelAbstractions loaded the
+connected configurations are computed there too — see [`connections`](@ref) — and a loop can
+hand over `to_backend(flatten(H), backend)` once to skip re-uploading the operator.
 """
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractArray)
     E = local_energy(vs, operator, vec(states))
@@ -152,26 +131,22 @@ local_energy(vs::AbstractVariationalState, operator) =
     local_energy(vs, operator, samples(vs))
 
 """
-The local-energy kernel, given the sample log-amplitudes the caller has already computed.
+The local-energy kernel, given the sample log-amplitudes the caller already computed.
 
-Every public entry point needs `log ψ` on the samples for something else as well — the Born
-weights, the gradient — so it is computed once at the top and threaded down here rather than
-recomputed behind each caller's back.
+Every public entry point needs `log ψ` on the samples for something else too — the Born weights,
+the gradient — so it is computed once at the top and threaded down here.
 """
 function _local_energy(
     vs::AbstractVariationalState, operator, states::AbstractVector, logψ_s::AbstractVector
 )
     x, mels = connections(vs, operator, states, logψ_s)
 
-    # One batched evaluation over every connected configuration of every sample, rather than
-    # one call per sample: the ansatz is the expensive part, so it is called once.
+    # One batched evaluation over every connected configuration of every sample.
     logψ_sp = reshape(log_amplitude(ansatz(vs), parameters(vs), x), size(mels))
 
-    # A whole-column reduction rather than a loop bounded by each sample's connection count.
-    # It needs no mask because the padding is already inert: a padded slot repeats the sample
-    # itself with a zero matrix element, so it contributes `0 * exp(0) == 0` exactly — never
-    # `0 * Inf`. Dropping the data-dependent trip count is also what makes this line run
-    # unchanged on a GPU array.
+    # The whole column reduces without a mask because the padding is inert: a padded slot
+    # repeats the sample with a zero matrix element, giving `0 * exp(0)` and never `0 * Inf`.
+    # Having no data-dependent trip count is also what lets this line run on a GPU array.
     m = _colocate(logψ_sp, mels)
     return vec(sum(m .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
 end
@@ -185,15 +160,12 @@ The connected configurations of `operator`, as the ansatz wants them, and their 
 is `(max_conn, batch)`, so `size(mels)` is the shape to reshape the log-amplitudes back into.
 
 This is the seam the device path attaches to, and it is a seam rather than a second copy of
-[`local_energy`](@ref) because only *these two arrays* differ between host and device. The
-reduction that follows is already written in terms that run unchanged on either, and
-duplicating it would mean two versions of the one line where the physics is.
+[`local_energy`](@ref) because only these two arrays differ between host and device — the
+reduction that follows already runs unchanged on either.
 
-`like` says where the answer is wanted: it is the sample log-amplitudes, so it carries both the
-memory space the ansatz put itself in and the float type it works in. Passing an array rather
-than a device or an element type keeps `NQSCore` free of any notion of either — the host
-implementation below ignores it entirely, and what a device *is* is the business of the
-extension that KernelAbstractions activates.
+`like` is the sample log-amplitudes, and says where the answer is wanted. Passing an array
+rather than a device keeps `NQSCore` free of any notion of one; the host implementation ignores
+it, and what a device is remains the business of the KernelAbstractions extension.
 """
 connections(vs::AbstractVariationalState, operator, states::AbstractVector, like) =
     _connections(vs, operator, states, like, _device_backend(like))
@@ -201,10 +173,9 @@ connections(vs::AbstractVariationalState, operator, states::AbstractVector, like
 """
 The KernelAbstractions backend `like` lives on, or `nothing` for host memory.
 
-Always `nothing` here, because without KernelAbstractions loaded there is no backend to name.
-The extension replaces this with the real question, and still answers `nothing` for an `Array`:
-loading KernelAbstractions must not silently divert host runs onto its CPU backend, which would
-swap a tested serial kernel for a launch-per-batch one on the strength of an unrelated `using`.
+Always `nothing` here, since without KernelAbstractions there is no backend to name. The
+extension answers properly — and still answers `nothing` for an `Array`, so that loading
+KernelAbstractions does not divert host runs onto its CPU backend.
 """
 _device_backend(::Any) = nothing
 
@@ -227,15 +198,13 @@ Everything an estimator built from this state needs, computed once from one set 
 - `weights`: exact Born probabilities for a [`FullSumState`](@ref), `nothing` for an
   [`MCState`](@ref) whose samples are already distributed according to `|ψ|²`.
 
-The plain energy gradient and the quantum geometric tensor are built from exactly these three
-things, so exposing them keeps `NQSOptimisers` from having to recompute — and, more
-importantly, guarantees that a preconditioned update and the energy it is derived from come
-from the *same* samples. Recomputing would silently mix two sample sets, which shows up as an
-optimizer that mysteriously fails to descend.
+The plain energy gradient and the quantum geometric tensor are built from these three things, so
+exposing them saves `NQSOptimisers` a recomputation and — more to the point — guarantees that a
+preconditioned update and the energy it derives from come from the *same* samples. Mixing two
+sample sets shows up as an optimizer that mysteriously fails to descend.
 
-Note that `expect_and_grad` does **not** go through here: a plain gradient needs only one
-contraction of `O`, which [`energy_gradient`](@ref) obtains without building the matrix at all.
-`O` is materialized only for the preconditioners that genuinely need it.
+`expect_and_grad` does **not** go through here: a plain gradient is one contraction of `O`,
+which [`energy_gradient`](@ref) obtains without building the matrix at all.
 """
 function local_estimators(
     vs::AbstractVariationalState, operator; holomorphic::Bool=false, chunk_size=nothing
@@ -250,19 +219,19 @@ function local_estimators(
         a, θ, x; backend=vs.backend, holomorphic=holomorphic, chunk_size=chunk_size
     )
 
-    return (; E=E, O=O, weights=_sample_weights(vs, logψ))
+    return (; E=E, O=O, weights=sample_weights(vs, logψ))
 end
 
 """
-    sample_weights(state) -> Union{Nothing,Vector}
+    sample_weights(state[, logψ]) -> Union{Nothing,Vector}
 
 Probability weights attached to a state's samples, or `nothing` when they are already drawn
 from `|ψ|²` and so carry equal weight.
+
+Pass `logψ` when the sample log-amplitudes are already to hand; it saves a second pass over the
+basis and is what [`local_estimators`](@ref) does.
 """
 function sample_weights end
-
-"""Weights from log-amplitudes the caller already has, avoiding a second pass over the basis."""
-function _sample_weights end
 
 # ---------------------------------------------------------------------------- FullSumState
 
@@ -271,17 +240,13 @@ function _sample_weights end
 
 A variational state that sums **exactly** over the whole basis instead of sampling.
 
-The counterpart of NetKet's `FullSumState`, and the reason it matters is testing: it satisfies
-the same interface as [`MCState`](@ref) but has no sampling noise at all, so a disagreement
-between the two is a bug rather than a fluctuation. Any model can be developed and debugged
-against exact summation and then scaled up by swapping the state type.
+The counterpart of NetKet's `FullSumState`, and it matters for testing: it satisfies the same
+interface as [`MCState`](@ref) with no sampling noise, so a disagreement between the two is a
+bug rather than a fluctuation. Cost is the dimension of the Hilbert space, so small systems only.
 
-Cost is the dimension of the Hilbert space, so this is for small systems only.
-
-The basis is what the state sums over, so it belongs to the state rather than to the ansatz —
-an ansatz is a functional form and has no opinion about which configurations exist. It defaults
-to [`default_basis`](@ref) of the ansatz; pass `basis` explicitly to sum over a symmetry sector
-instead.
+The basis belongs to the state rather than the ansatz, an ansatz being a functional form with no
+opinion about which configurations exist. It defaults to [`default_basis`](@ref); pass `basis`
+to sum over a symmetry sector instead.
 
 # Fields
 - `ansatz`, `parameters`: the wavefunction.
@@ -323,7 +288,7 @@ parameters(vs::FullSumState) = vs.parameters
 setparameters!(vs::FullSumState, θ) = (vs.parameters = θ; vs)
 samples(vs::FullSumState) = vs.basis.states
 sample_weights(vs::FullSumState) = probabilities(vs)
-_sample_weights(::FullSumState, logψ::AbstractVector) = born_probabilities(logψ)
+sample_weights(::FullSumState, logψ::AbstractVector) = born_probabilities(logψ)
 
 """
     probabilities(state) -> Vector{Float64}
@@ -361,15 +326,14 @@ A variational state that estimates expectation values by Monte Carlo.
 
 Samples are drawn when the state is built and reused until something invalidates them;
 [`resample!`](@ref) draws a fresh set. Reuse is what makes `expect` and `expect_and_grad`
-consistent with one another — both must be computed from the *same* samples, or the gradient
-does not correspond to the reported energy.
+consistent: both must come from the *same* samples, or the gradient does not correspond to the
+reported energy.
 
-Drawing eagerly, rather than on first use, is what lets the sample and sampler-state fields
-have concrete types: their types are whatever the sampler returns, which is not knowable from
-the sampler's type alone.
+Drawing eagerly rather than on first use gives the sample and sampler-state fields concrete
+types, which are whatever the sampler returns and not knowable from its type alone.
 
 The sampler's own state survives a parameter change even though the samples do not, so a Markov
-chain resumes from where it was instead of restarting. See [`sample`](@ref).
+chain resumes instead of restarting. See [`sample`](@ref).
 
 # Fields
 - `ansatz`, `parameters`: the wavefunction.
@@ -401,7 +365,7 @@ ansatz(vs::MCState) = vs.ansatz
 parameters(vs::MCState) = vs.parameters
 
 sample_weights(::MCState) = nothing
-_sample_weights(::MCState, ::AbstractVector) = nothing
+sample_weights(::MCState, ::AbstractVector) = nothing
 
 """
     sampler_state(state)
@@ -412,11 +376,9 @@ independently.
 sampler_state(vs::MCState) = vs.sampler_state
 
 """
-Changing the parameters invalidates the cached samples: they came from the old `|ψ|²`.
-
-The *sampler* state is deliberately kept. A parameter update moves the distribution only
-slightly, so the chain it describes is still very nearly equilibrated — throwing it away would
-mean re-paying the burn-in on every optimization step.
+Changing the parameters invalidates the cached samples, which came from the old `|ψ|²`. The
+*sampler* state is kept: an update moves the distribution only slightly, so the chain it
+describes is still nearly equilibrated and discarding it would re-pay the burn-in every step.
 """
 setparameters!(vs::MCState, θ) = (vs.parameters = θ; vs.stale = true; vs)
 

@@ -75,8 +75,6 @@ function integrated_autocorrelation(chain::AbstractVector{<:Real})
 
     τ = 1.0
     for lag in 1:(n-1)
-        # Accumulated in a loop rather than as `sum(x[1:n-lag] .* x[1+lag:n])`, which would
-        # materialize a fresh array on every one of these iterations.
         acc = zero(eltype(x))
         @inbounds @simd for i in 1:(n-lag)
             acc += x[i] * x[i+lag]
@@ -106,7 +104,6 @@ function split_rhat(chains::AbstractMatrix{<:Real})
     means = Vector{Float64}(undef, m)
     variances = Vector{Float64}(undef, m)
     for c in 1:n_chains
-        # Views, not copies: the halves are only ever reduced over.
         lower = @view chains[1:half, c]
         upper = @view chains[(half+1):(2half), c]
         means[c], variances[c] = mean(lower), var(lower)
@@ -131,17 +128,14 @@ autocorrelation model at all; with a single chain it falls back to the autocorre
 standard error.
 """
 function statistics(values::AbstractMatrix)
-    # [`integrated_autocorrelation`](@ref) walks lags sequentially and indexes elements, and
-    # split-R̂ reduces over halves of each chain. None of that vectorizes, so the data comes to
-    # the host in one transfer rather than being probed element by element wherever the local
-    # energies happened to be computed. On the host this is free.
+    # Neither the autocorrelation walk nor split-R̂ vectorizes, so the data comes to the host in
+    # one transfer rather than being probed element by element wherever it was computed.
     values = to_host(values)
     total = vec(values)
     μ = mean(total)
     σ² = var(total)
 
     n_chains = size(values, 2)
-    # Only complex data needs converting; real data is used as it stands.
     real_values = eltype(values) <: Real ? values : real.(values)
 
     τ = mean(integrated_autocorrelation(view(real_values, :, c)) for c in 1:n_chains)
