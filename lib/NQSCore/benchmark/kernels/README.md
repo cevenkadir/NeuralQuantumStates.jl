@@ -76,12 +76,23 @@ carried as a `Val`; any other difference would blur the answer. It then reports:
 
 ## Reading the result
 
-The Reactant time against the CUDA.jl one, on the last line.
+**Does it run, and is the answer right.** That is the whole question, and the bar is lower than it
+looks.
 
-Within a small factor, carrying the kernel into Reactant is worth doing, and the whole variational
-step can live in one compiled region. Far above, CUDA.jl keeps the GPU and Reactant stays a CPU
-story — where it is already a measured 15–18× on the gradient, and needs no kernel at all.
+Measured on an RTX 5000 Ada, `expect_and_grad` under CUDA.jl is 5.245 ms — `local_energy` 2.609 ms
+plus `energy_gradient` 2.471 ms, 96.9% between them — and the connected-configuration kernel is
+**38.8 µs** of that. So the kernel is 1.5% of `local_energy`, and porting it is not about kernel
+speed at all. It is the enabler: the bulk of `local_energy` is the network forward over 53,248
+connected configurations, ~2.57 ms, and that can only move into XLA if the data it consumes is
+already there. Reactant does the gradient in 355 µs against Zygote-on-CUDA's 2.471 ms; if the
+forward goes at a similar factor the step lands near 0.75 ms.
 
-Whether it *raised* is the secondary question. Unraised but running is a success; raised also buys
-fusion with the network evaluation that consumes the kernel's output, which is what would let the
-compiled region span `local_energy` and the gradient together.
+A kernel several times slower than CUDA.jl's is therefore still worth having. Only a catastrophic
+ratio — or a wrong answer — argues against.
+
+**Raising is the secondary question, and it already has an answer: no.** The loops are
+data-dependent, and Reactant says `cannot raise op to stablehlo` on the `scf.for`. That costs
+fusion with the network evaluation downstream, not the ability to run, so the probe compiles
+unraised *first* and treats the raised attempt as a bonus. Asking only for the raised form takes
+the whole compilation down with it, which is how an earlier version of this probe managed to leave
+the real question untested.

@@ -324,14 +324,19 @@ let spec = Spin(1 // 2), nsites = NSITES
     println("\nprobe 1 — the kernel as it stands, on Reactant arrays")
     try
         rstates = Reactant.to_rarray(states)
-        note("to_rarray(states::Vector{BaseInt})", "ok")
-        println("      unexpected: BaseInt was accepted, so the element type is not the obstacle")
-        println("      type is ", typeof(rstates))
+        # Not "did it throw" but "did it convert". `to_rarray` hands back a `Vector{BaseInt}`
+        # unchanged rather than refusing it, so an exception check calls silence success — which
+        # is what the first version of this probe did.
+        converted = rstates isa Reactant.AnyConcreteRArray
+        note("to_rarray converted it", string(converted))
+        note("what came back", string(typeof(rstates)))
+        converted || println("""
+      Passed through untouched, not accepted: `BaseInt` is not an XLA element type, so the array
+      stays a host `Vector` and would be frozen into the compiled region as a constant rather than
+      becoming a tensor. The element type is the obstacle, and probe 2 is the test of whether it
+      is the only one.""")
     catch err
         failed("to_rarray(states::Vector{BaseInt})", err)
-        println("""
-      This is the expected outcome and the reason probe 2 exists. What matters is whether the
-      message names the element type and nothing else.""")
     end
 
     # -------------------------------------------------- probe 2, the same kernel over integers
@@ -364,9 +369,11 @@ let spec = Spin(1 // 2), nsites = NSITES
             CUDA.@sync nothing
             ok = Array(gpu_k) == host_k && Array(gpu_c) == raw_host_c && Array(gpu_m) == host_m
             note("matches the reference kernel, on CUDA", string(ok))
-            t_cuda = @belapsed CUDA.@sync raw_connected(
+            # Parenthesised: `CUDA.@sync` is a macro and would otherwise swallow the
+            # `evals`/`samples` keywords meant for `@belapsed` and pass them to the kernel.
+            t_cuda = @belapsed (CUDA.@sync raw_connected(
                 $cu..., $(op.n_diagonal), $(op.n_terms), $height, $width, $base
-            ) evals = 1 samples = SAMPLES
+            )) evals = 1 samples = SAMPLES
             GC.gc()
             report("connections on CUDA.jl", t_cuda)
         catch err
@@ -390,36 +397,38 @@ let spec = Spin(1 // 2), nsites = NSITES
         nd, nt = op.n_diagonal, op.n_terms
         args = (ts, fp, fc, cp, ou, va, st, nd, nt, height, width, base)
 
-        # Did it raise? A raised kernel lowers to plain StableHLO; an unraised one keeps a kernel
-        # call in the module. Both are results — raising buys fusion with the network that
-        # consumes this, running is already enough — but which one it is decides how wide the
-        # compiled region in the real thing can be.
-        hlo = try
-            sprint(show, Reactant.@code_hlo raise = true raw_connected(
-                ts, fp, fc, cp, ou, va, st, nd, nt, height, width, base
-            ))
-        catch err
-            failed("@code_hlo", err)
-            ""
+        # Unraised first, because that is the question that decides feasibility. Raising turns
+        # a kernel into tensor operations and is needed for differentiation and fusion; nothing
+        # differentiates connected configurations, so a kernel that merely runs is enough. Asking
+        # for it and getting `cannot raise op to stablehlo` takes the whole compilation down with
+        # it, which is how the first version of this probe managed to leave the real question
+        # untested.
+        for raise in (false, true)
+            what = raise ? "raised" : "unraised"
+            try
+                t0 = @elapsed thunk = Reactant.compile(
+                    raw_connected, args; sync=true, raise=raise
+                )
+                report("  Reactant $what, compiling (once)", t0)
+
+                r_c, r_m, r_k = thunk(args...)
+                ok = Array(r_k) == host_k && Array(r_c) == raw_host_c &&
+                     Array(r_m) == host_m
+                note("  matches the reference kernel", string(ok))
+
+                t = @belapsed $thunk($args...) evals = 1 samples = SAMPLES
+                GC.gc()
+                report("  connections on Reactant, $what", t)
+                t_cuda === nothing ||
+                    @printf("  %-46s %11.2fx\n", "  Reactant / CUDA.jl, $what", t / t_cuda)
+            catch err
+                failed("  Reactant $what", err)
+                raise && println("""
+      Expected: this kernel's loops are data-dependent — `scf.for` with carried values, a `break`,
+      a compaction pass — and the docs say not all kernels are raisable. It costs fusion with the
+      network evaluation downstream, not the ability to run.""")
+            end
         end
-        if !isempty(hlo)
-            launched = occursin("kernel_call", hlo) || occursin("custom_call", hlo)
-            note("raised to plain StableHLO", string(!launched))
-            note("HLO module size (lines)", string(count(==('\n'), hlo) + 1))
-        end
-
-        t0 = @elapsed thunk = Reactant.compile(raw_connected, args; sync=true, raise=true)
-        report("Reactant, compiling (once)", t0)
-
-        r_c, r_m, r_k = thunk(args...)
-        ok = Array(r_k) == host_k && Array(r_c) == raw_host_c && Array(r_m) == host_m
-        note("matches the reference kernel, on Reactant", string(ok))
-
-        t_reactant = @belapsed $thunk($args...) evals = 1 samples = SAMPLES
-        GC.gc()
-        report("connections on Reactant", t_reactant)
-        t_cuda === nothing ||
-            @printf("  %-46s %11.2fx\n", "Reactant / CUDA.jl", t_reactant / t_cuda)
     catch err
         failed("the Reactant run", err)
     end
