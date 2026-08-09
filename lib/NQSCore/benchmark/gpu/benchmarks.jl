@@ -262,8 +262,15 @@ let spec = Spin(1 // 2), nsites = NSITES
         println("\ngradient, broken down")
         vs_gpu = FullSumState(a, θ_gpu; backend=BACKEND, basis=b)
         xs = NQSCore.configurations_of(vs_gpu, b.states)
+        # Every diagnostic below that is meant to show what a *real* batch costs takes this
+        # one, never `xs`. `configurations_of` decides `xs`'s element type, so a measurement
+        # written against it silently changes what it measures the moment that decision
+        # changes — which is how `complex matmul, reverse` once appeared to regress twelvefold
+        # while nothing had regressed at all.
+        xs_real = Float64.(real.(xs))
         @printf("  %-46s %12s\n", "sample batch is on the device",
                 string(!(xs isa Array)))
+        @printf("  %-46s %12s\n", "sample batch element type", string(eltype(xs)))
 
         lg = timed("log_amplitude on the samples (forward)",
                    () -> CUDA.@sync log_amplitude(a, θ_gpu, xs))
@@ -301,7 +308,7 @@ let spec = Spin(1 // 2), nsites = NSITES
             u = CuArray(randn(Xoshiro(0), ComplexF64, nh, length(b.states)))
             V = CuArray(randn(Xoshiro(1), ComplexF64, nh, NSITES))
             f_red(z) = sum(real, sum(NQSAnsatze.logtwocosh, z; dims=1))
-            f_mm(M) = sum(real, M * xs)
+            f_mm(M) = sum(real, M * xs_real)
 
             for (label, f, arg) in (("logtwocosh reduction", f_red, u),
                                     ("complex matmul", f_mm, V))
@@ -377,18 +384,22 @@ let spec = Spin(1 // 2), nsites = NSITES
         try
             layer, st = a.model, a.states
             lt = NQSAnsatze.logtwocosh
+            # `xs` is whatever `configurations_of` decided on, which is the point of the top
+            # rung. The rungs below take the deliberately real batch, so that they keep showing
+            # the cost the type choice avoids rather than quietly agreeing with it once the
+            # choice is right.
             r_ansatz(θ) = sum(real, log_amplitude(a, θ, xs))
-            r_apply(θ) = sum(real, first(Lux.apply(layer, xs, θ, st)))
-            r_layer(θ) = sum(real, first(layer(xs, θ, st)))
-            r_body(θ) = sum(real, reshape(θ.visible, 1, :) * xs .+
-                                  sum(lt, θ.weight * xs .+ θ.hidden; dims=1))
-            r_hidden(θ) = sum(real, sum(lt, θ.weight * xs .+ θ.hidden; dims=1))
-            r_mm(θ) = sum(real, θ.weight * xs .+ θ.hidden)
+            r_apply(θ) = sum(real, first(Lux.apply(layer, xs_real, θ, st)))
+            r_layer(θ) = sum(real, first(layer(xs_real, θ, st)))
+            r_body(θ) = sum(real, reshape(θ.visible, 1, :) * xs_real .+
+                                  sum(lt, θ.weight * xs_real .+ θ.hidden; dims=1))
+            r_hidden(θ) = sum(real, sum(lt, θ.weight * xs_real .+ θ.hidden; dims=1))
+            r_mm(θ) = sum(real, θ.weight * xs_real .+ θ.hidden)
 
-            for (label, f) in (("through LuxAnsatz", r_ansatz),
-                               ("through Lux.apply", r_apply),
-                               ("the layer, called directly", r_layer),
-                               ("the layer body, inlined", r_body),
+            for (label, f) in (("through LuxAnsatz, batch as built", r_ansatz),
+                               ("through Lux.apply, real batch", r_apply),
+                               ("the layer directly, real batch", r_layer),
+                               ("the layer body inlined, real batch", r_body),
                                ("...without the visible term", r_hidden),
                                ("...matmul and bias only", r_mm))
                 timed("  $label", () -> CUDA.@sync Zygote.gradient(f, θ_gpu))
@@ -409,15 +420,16 @@ let spec = Spin(1 // 2), nsites = NSITES
             # 4096, which a generic kernel runs on 576 threads that each loop four thousand
             # times. Both are timed below, and only the second should differ.
             println("\n  does the matmul reach cuBLAS?")
-            xc = ComplexF64.(xs)
+            xc = ComplexF64.(xs_real)
             Δ = CuArray(randn(Xoshiro(2), ComplexF64, nh, length(b.states)))
 
-            f_mixed = timed("  forward, ComplexF64 x Float64", () -> CUDA.@sync θ_gpu.weight * xs)
+            f_mixed = timed("  forward, ComplexF64 x Float64",
+                            () -> CUDA.@sync θ_gpu.weight * xs_real)
             f_same = timed("  forward, ComplexF64 x ComplexF64", () -> CUDA.@sync θ_gpu.weight * xc)
             compare("  converting the batch would be", f_mixed, f_same)
 
             r_mixed = timed("  pullback, ComplexF64 x adjoint Float64",
-                            () -> CUDA.@sync Δ * xs')
+                            () -> CUDA.@sync Δ * xs_real')
             r_same = timed("  pullback, ComplexF64 x adjoint ComplexF64",
                            () -> CUDA.@sync Δ * xc')
             compare("  converting the batch would be", r_mixed, r_same)

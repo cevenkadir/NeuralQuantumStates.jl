@@ -66,10 +66,29 @@ depend on a basis library in order to guess.
 NQSCore.default_basis(a::LuxAnsatz) =
     SymBasis.Bases.basis(SymBasis.dof_object(a.dof), a.nsites)
 
-"""Real element type to feed the network, matching whatever the parameters are made of."""
+"""
+The narrowest real type that can hold a configuration for this network.
+
+A configuration *is* a real number, so this is what a batch costs least to carry — and it is
+what a forward pass wants, where a wider batch buys nothing. It is deliberately not the type the
+network's arithmetic is in; see [`NQSCore.input_type`](@ref), which answers that separately and
+is honoured only where a derivative follows.
+"""
 _input_type(θ) = Float64
 _input_type(θ::NamedTuple) = isempty(θ) ? Float64 : _input_type(first(values(θ)))
 _input_type(θ::AbstractArray) = real(eltype(θ))
+
+"""
+The type this network computes in, which for a wavefunction is usually complex.
+
+Answering it lets `NQSCore` build a batch that is going to be differentiated in this type
+directly, so that the complex-real matrix products in the reverse pass — which no BLAS has a
+kernel for — never arise. It is a 4.4x saving on the layer's reverse pass and a loss everywhere
+else, which is why it is a question `NQSCore` asks about one specific batch rather than a rule
+applied to all of them.
+"""
+NQSCore.input_type(::LuxAnsatz, θ) =
+    (r = _reference_array(θ); r === nothing ? nothing : eltype(r))
 
 # Any array among the parameters, whose type says where the network expects to be run. Shared
 # with `NQSCore`, which asks the same question of the same object to decide where to unpack a
@@ -103,15 +122,21 @@ colocate(reference, input::AbstractArray) =
     copyto!(similar(reference, eltype(input), size(input)), input)
 
 """
-The batch as the network's element type, without a copy when it is already that type.
+The batch in a type that holds both it and `T`, without a copy when it already is one.
 
 Configurations normally arrive as exact rationals, which no network and no accelerator wants,
-so the conversion has to happen. It does not always: a device-side connected-configuration
-kernel writes the float straight out, and re-broadcasting it would be a full-size allocation
-on the more expensive memory for no change at all.
+so a conversion has to happen. Two cases where it does not, and both are ordinary: a device-side
+connected-configuration kernel writes the float straight out, and `NQSCore` builds a batch bound
+for a derivative in the network's own — usually complex — arithmetic type.
+
+Promoting rather than converting is what makes the second case work. `T` is the *narrowest*
+type the network can take, so a batch that is already wider is already acceptable, and
+converting it to `T` would be a demotion that either loses the imaginary part or throws.
 """
-_as_input(::Type{T}, x::AbstractArray{T}) where {T} = x
-_as_input(::Type{T}, x::AbstractArray) where {T} = T.(x)
+function _as_input(::Type{T}, x::AbstractArray) where {T}
+    S = promote_type(eltype(x), T)
+    return S === eltype(x) ? x : S.(x)
+end
 
 # Moving a batch to a device is a `copyto!`, and reverse-mode AD refuses to differentiate a
 # mutation. It does not have to: `input` is the configurations, which are data rather than

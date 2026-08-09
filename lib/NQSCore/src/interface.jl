@@ -40,6 +40,37 @@ Number of sites the ansatz is defined on. Defaults to the `nsites` field; see
 n_sites(a::AbstractAnsatz) = a.nsites
 
 """
+    NQSCore.input_type(ansatz, parameters) -> Union{Type,Nothing}
+
+The element type this ansatz does its arithmetic in, or `nothing` when it has no preference.
+
+`nothing` is the default and means "hand me the configurations as they naturally come" — exact
+rationals for a spin. An ansatz that answers with a type gets a batch already in it.
+
+# Why an ansatz would want this, and why only some batches honour it
+
+A configuration is a real number, so the obvious thing is to build a real batch and let the
+ansatz widen it. For a neural network with **complex** parameters that is a false economy: the
+promotion does not go away, it moves inside every matrix product, where BLAS has no kernel for a
+mixed complex-real pair and the operation falls to a generic one.
+
+The cost is wildly asymmetric between the two directions of a derivative, which is what makes it
+worth an interface function rather than a rule. On a Quadro GV100 with 4096 configurations, a
+forward product `(48×12)(12×4096)` is *faster* mixed — 33 µs against 56 µs — because it has
+196608 outputs over a reduction of length 12 and a generic kernel has plenty to be parallel
+over. Its pullback `(48×4096)(4096×12)` has 576 outputs over a reduction of length 4096, which a
+generic kernel runs on 576 threads that each loop four thousand times: **874 µs against 63 µs**.
+Differentiating the whole layer went from 3.6 ms to 0.8 ms.
+
+So the promotion pays for itself many times over on a batch that will be differentiated, and is
+pure loss on one that will not. Only [`configurations_of`](@ref) honours it, because that is the
+batch `energy_gradient` and `log_derivatives` are handed. The connected configurations built by
+[`connections`](@ref) and the batches a sampler evaluates stay in their natural type — measured,
+promoting those cost 13% on `expect` and **78%** on a Metropolis sweep.
+"""
+input_type(::AbstractAnsatz, θ) = nothing
+
+"""
     log_amplitude(ansatz, parameters, x) -> AbstractVector
 
 Log-amplitudes `log ψ(x)` for a batch of configurations.

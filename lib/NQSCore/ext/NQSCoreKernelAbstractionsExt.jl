@@ -80,15 +80,18 @@ _local_value_table(::Type{T}, spec, backend) where {T} =
     _resident(backend, collect(T, ConnectedBasisConfigurations.local_values(spec)))
 
 function NQSCore._configurations(
-    vs::NQSCore.AbstractVariationalState, states::AbstractVector,
+    vs::NQSCore.AbstractVariationalState, states::AbstractVector, T,
     reference::AbstractArray, backend,
 )
     a = NQSCore.ansatz(vs)
     nsites = NQSCore.n_sites(a)
-    T = real(eltype(reference))
+    # The ansatz's answer when it has one, and the narrowest faithful type otherwise. The
+    # kernel writes it straight out, so an ansatz that wants a complex batch never pays for a
+    # second pass to widen a real one.
+    S = T === nothing ? real(eltype(reference)) : T
 
-    values = _local_value_table(T, NQSCore.dof(a), backend)
-    x = KernelAbstractions.allocate(backend, T, nsites, length(states))
+    values = _local_value_table(S, NQSCore.dof(a), backend)
+    x = KernelAbstractions.allocate(backend, S, nsites, length(states))
     ConnectedBasisConfigurations.configurations!(
         x, values, _resident(backend, states), nsites, backend
     )

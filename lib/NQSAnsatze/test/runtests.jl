@@ -120,6 +120,31 @@ end
             @test all(isfinite, log_amplitude(a, θ, x))
         end
 
+        @testset "a batch bound for a derivative is asked about separately" begin
+            # Two different types, and the difference is the whole point. A forward pass wants
+            # the narrowest faithful one, because a wider batch buys it nothing; a batch about
+            # to be differentiated wants the network's own arithmetic type, because otherwise
+            # every matrix product in the reverse pass is a mixed complex-real pair that no
+            # BLAS has a kernel for. Promoting both was measured: 4.4x on the layer's reverse
+            # pass, 13% worse on `expect` and 78% worse on a Metropolis sweep.
+            @test eltype(θ.weight) <: Complex
+            @test NQSAnsatze._input_type(θ) === real(eltype(θ.weight))
+            @test NQSCore.input_type(a, θ) === eltype(θ.weight)
+
+            # A real network asks for a real batch: this is about matching the parameters, not
+            # about complex arithmetic being preferable.
+            ar = LuxAnsatz(Chain(Dense(nsites => 2, tanh), Dense(2 => 2)), dof, nsites; rng=rng)
+            θr = init_parameters(ar, rng)
+            @test NQSCore.input_type(ar, θr) <: Real
+
+            # Whatever the type, the answer is the same. A wider batch must pass through
+            # untouched rather than being demoted back — which would throw, or silently drop
+            # the imaginary part.
+            @test log_amplitude(a, θ, ComplexF64.(x)) ≈ logψ
+            @test log_amplitude(a, θ, Float64.(x)) ≈ logψ
+            @test NQSAnsatze._as_input(Float64, ComplexF64.(x)) == ComplexF64.(x)
+        end
+
         @testset "a two-row model output is read as re/im" begin
             model = Chain(Dense(nsites => 4, tanh), Dense(4 => 2))
             ar = LuxAnsatz(model, dof, nsites; rng=rng)

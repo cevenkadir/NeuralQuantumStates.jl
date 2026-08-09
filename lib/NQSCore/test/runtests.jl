@@ -692,9 +692,22 @@ end
             @test NQSCore.configurations_of(vs, b.states) ==
                   configurations(spec, b.states, nsites)
 
-            device_x = NQSCore._configurations(vs, b.states, parameters(vs), CPU())
+            device_x = NQSCore._configurations(vs, b.states, nothing, parameters(vs), CPU())
             @test eltype(device_x) === Float64
             @test device_x == Float64.(configurations(spec, b.states, nsites))
+
+            # An ansatz that names a type gets it written straight out, rather than a real
+            # batch it then has to widen — which for a batch bound for a derivative is the
+            # difference between a BLAS product and a generic one in every reverse pass.
+            wide = NQSCore._configurations(vs, b.states, ComplexF64, parameters(vs), CPU())
+            @test eltype(wide) === ComplexF64
+            @test wide == ComplexF64.(configurations(spec, b.states, nsites))
+            @test NQSCore._host_configurations(vs, b.states, ComplexF64) == wide
+
+            # `LogStateVector` has no opinion, and must not be given one: its parameters are
+            # amplitudes rather than network weights, and it looks its configurations up in a
+            # basis rather than doing arithmetic on them.
+            @test NQSCore.input_type(a, parameters(vs)) === nothing
         end
 
         @testset "an operator already on the backend is not moved again" begin

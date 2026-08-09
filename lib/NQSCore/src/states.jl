@@ -30,21 +30,29 @@ digits below. On a device — with KernelAbstractions loaded — it is the same 
 configurations go through, which matters more than its size suggests, because this array is
 consumed twice: once for `log ψ` and once inside the differentiated loss, where a host-to-device
 conversion would sit in the middle of an automatic-differentiation pass.
+
+Its element type follows the parameters as well, through [`NQSCore.input_type`](@ref). This is
+the one batch built ahead of a derivative, and it is the only one that asks — see there for the
+measurement, and for why the forward-only batches are deliberately left alone.
 """
 function configurations_of(vs::AbstractVariationalState, states::AbstractArray)
     flat = vec(states)
+    T = input_type(ansatz(vs), parameters(vs))
     reference = _reference_array(parameters(vs))
-    reference isa AbstractArray || return _host_configurations(vs, flat)
-    return _configurations(vs, flat, reference, _device_backend(reference))
+    reference isa AbstractArray || return _host_configurations(vs, flat, T)
+    return _configurations(vs, flat, T, reference, _device_backend(reference))
 end
 
-_host_configurations(vs::AbstractVariationalState, states::AbstractVector) =
-    ConnectedBasisConfigurations.configurations(
+function _host_configurations(vs::AbstractVariationalState, states::AbstractVector, T)
+    x = ConnectedBasisConfigurations.configurations(
         dof(ansatz(vs)), states, n_sites(ansatz(vs))
     )
+    return T === nothing ? x : T.(x)
+end
 
-_configurations(vs::AbstractVariationalState, states::AbstractVector, ::AbstractArray, ::Nothing) =
-    _host_configurations(vs, states)
+_configurations(
+    vs::AbstractVariationalState, states::AbstractVector, T, ::AbstractArray, ::Nothing
+) = _host_configurations(vs, states, T)
 
 """
     NQSCore._reference_array(parameters) -> AbstractArray or nothing
