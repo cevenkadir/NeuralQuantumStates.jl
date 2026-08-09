@@ -28,6 +28,17 @@ evaluate is padding.
 
 Each measurement is guarded: a failure prints and the run continues, because most of the device
 paths here have never executed on hardware and one broken step should not hide the rest.
+
+# One AD engine, and why
+
+Zygote only. Enzyme was tried here and removed: on CUDA arrays its failed compilations leave the
+GPUArrays allocator double-releasing buffers, which then surfaces inside *later, unrelated*
+measurements and corrupts the baseline this file exists to hold. `../reactant` answered the
+question on the CPU instead, where nothing else is at risk.
+
+Reactant is not here for a different reason: XLA preallocates the bulk of the card when it
+initializes and CUDA.jl keeps its own pool, so the two cannot share a process. That column lives
+in `../reactant`, which prints the same rung labels so the two reports read side by side.
 """
 
 using BenchmarkTools
@@ -104,7 +115,38 @@ end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 3
 
-const BACKEND = AutoZygote()
+"""
+The automatic-differentiation engines to compare, in reporting order.
+
+One entry, for now. Enzyme was measured here and taken back out: on CUDA arrays its failed
+reverse-mode compilations leave the GPUArrays allocator double-releasing buffers, and because
+BenchmarkTools runs `gcscrub` before every trial, the wreckage surfaces as
+`ArgumentError("Attempt to release freed data")` inside whichever *later, unrelated* measurement
+happens to trigger the collection. That corrupts the Zygote baseline this file exists to hold.
+
+Nothing was lost by removing it. `../reactant` settled the question on the CPU, where a control
+rung isolated the cause: Enzyme has no reverse rule for a complex `zgemm`
+("Complex inputs not yet supported in reverse mode for BLAS calls"), which the differentiated
+region always reaches because `input_type` answers `eltype(θ)`. Given a real batch it works and
+is 2.2x *slower* than Zygote. The tuple stays a tuple so a second engine can be added the day
+that rule exists.
+
+Reactant is absent for a different reason: XLA preallocates the bulk of the card when it
+initializes and CUDA.jl keeps its own pool, so the two cannot share a process. That column lives
+in `../reactant`, and prints the same rung labels so the two reports read side by side.
+"""
+const ENGINES = (("Zygote", AutoZygote()),)
+
+"""Where one backend has to be picked and no derivative is being compared — the reference."""
+const BACKEND = last(first(ENGINES))
+
+"""
+The gradient of a one-argument closure, from whichever engine.
+
+A method per engine rather than a call at each site, so that adding one back is a single line
+here instead of an edit to every rung below.
+"""
+gradient_of(::AutoZygote, f::F, x) where {F} = Zygote.gradient(f, x)[1]
 
 """Transverse-field Ising on a periodic chain, as an `OpSum`."""
 function tfi(nsites; J=1.0, h_x=1.0, h_z=0.0)
@@ -121,17 +163,39 @@ end
 
 report(label, t) = @printf("  %-46s %12s\n", label, BenchmarkTools.prettytime(t * 1e9))
 
+"""
+Each failure's label, its first line, and its whole text.
+
+One line was enough while every failure here was a CUDA one — "CUDA is not available", a
+`DimensionMismatch`. Enzyme's are not: the actionable part sits several lines in, and line one is
+often just an exception name. The whole of each is dumped after the tally at the end of the run.
+"""
+const FAILURES = Tuple{String,String,String}[]
+
 """Time `f`, reporting rather than raising if the device path is not there yet."""
 function timed(label, f)
     try
-        t = @belapsed $f()
+        trial = @benchmark $f()
+        t = minimum(trial).time / 1e9
         report(label, t)
+        # A handful of evaluations is a compile time wearing a benchmark's clothes, which is a
+        # live risk now that one of the engines compiles on first call.
+        length(trial.times) < 5 &&
+            @printf("  %-46s %12d\n", "    samples (few — treat as indicative)",
+                    length(trial.times))
         return t
     catch err
         @printf("  %-46s %12s\n", label, "FAILED")
-        println("      ", first(split(sprint(showerror, err), '\n')))
+        failed(strip(label), err)
         return nothing
     end
+end
+
+"""Record a failure and print its first line; the rest waits for the tally."""
+function failed(label, err)
+    text = sprint(showerror, err)
+    push!(FAILURES, (label, first(split(text, '\n')), text))
+    println("      ", first(split(text, '\n')))
 end
 
 speedup(cpu, gpu) = (cpu === nothing || gpu === nothing) ? nothing : cpu / gpu
@@ -185,8 +249,8 @@ let spec = Spin(1 // 2), nsites = NSITES
         θ_gpu = fmap(CuArray, θ_cpu)
         timed("log_amplitude, CUDA", () -> CUDA.@sync log_amplitude(a, θ_gpu, x))
     catch err
-        println("      moving parameters to the device failed: ",
-                first(split(sprint(showerror, err), '\n')))
+        println("      moving parameters to the device failed:")
+        failed("moving parameters to the device", err)
         nothing
     end
     compare("speedup", t_cpu, t_gpu)
@@ -198,8 +262,14 @@ let spec = Spin(1 // 2), nsites = NSITES
 
     println("\nlocal energy and gradient")
     vs_cpu = FullSumState(a, θ_cpu; backend=BACKEND, basis=b)
+    # `expect` takes no derivative, so it is measured once rather than per engine.
     e_cpu = timed("expect, CPU", () -> expect(vs_cpu, H))
-    g_cpu = timed("expect_and_grad, CPU", () -> expect_and_grad(vs_cpu, H))
+    g_cpu = g_gpu = nothing
+    for (engine, backend) in ENGINES
+        state = FullSumState(a, θ_cpu; backend=backend, basis=b)
+        t = timed("expect_and_grad, CPU ($engine)", () -> expect_and_grad(state, H))
+        engine == "Zygote" && (g_cpu = t)
+    end
     e_gpu = nothing              # referenced by the transfer section, which runs either way
     if θ_gpu !== nothing
         vs_gpu = FullSumState(a, θ_gpu; backend=BACKEND, basis=b)
@@ -207,9 +277,14 @@ let spec = Spin(1 // 2), nsites = NSITES
         # configurations are computed there too, so this covers the device kernel and not just
         # the network. The operator is uploaded on each call in this form.
         e_gpu = timed("expect, CUDA", () -> CUDA.@sync expect(vs_gpu, H))
-        g_gpu = timed("expect_and_grad, CUDA", () -> CUDA.@sync expect_and_grad(vs_gpu, H))
+        for (engine, backend) in ENGINES
+            state = FullSumState(a, θ_gpu; backend=backend, basis=b)
+            t = timed("expect_and_grad, CUDA ($engine)",
+                      () -> CUDA.@sync expect_and_grad(state, H))
+            engine == "Zygote" && (g_gpu = t)
+        end
         compare("expect speedup", e_cpu, e_gpu)
-        compare("expect_and_grad speedup", g_cpu, g_gpu)
+        compare("expect_and_grad speedup (Zygote)", g_cpu, g_gpu)
 
         # The loop-friendly form: upload the operator once instead of on every call. Seven
         # small transfers is not much against a millisecond, but an optimization run pays them
@@ -220,8 +295,8 @@ let spec = Spin(1 // 2), nsites = NSITES
             timed("expect, CUDA (operator uploaded once)",
                   () -> CUDA.@sync expect(vs_gpu, H_dev))
         catch err
-            println("      uploading the operator failed: ",
-                    first(split(sprint(showerror, err), '\n')))
+            println("      uploading the operator failed:")
+            failed("uploading the operator", err)
             nothing
         end
         compare("expect speedup, operator uploaded once", e_cpu, e_res)
@@ -245,7 +320,8 @@ let spec = Spin(1 // 2), nsites = NSITES
                         isapprox(ec, er; rtol=tol))
             end
         catch err
-            println("  energy comparison failed: ", first(split(sprint(showerror, err), '\n')))
+            println("  energy comparison failed:")
+            failed("energy comparison", err)
         end
     end
 
@@ -278,9 +354,13 @@ let spec = Spin(1 // 2), nsites = NSITES
         p = NQSCore.born_probabilities(logψ)
         E = NQSCore.local_energy(vs_gpu, H, b.states)
 
-        eg = timed("energy_gradient alone (reverse)",
-                   () -> CUDA.@sync NQSCore.energy_gradient(
-                       a, θ_gpu, xs, E, p; backend=BACKEND))
+        eg = nothing
+        for (engine, backend) in ENGINES
+            t = timed("energy_gradient alone, reverse ($engine)",
+                      () -> CUDA.@sync NQSCore.energy_gradient(
+                          a, θ_gpu, xs, E, p; backend=backend))
+            engine == "Zygote" && (eg = t)
+        end
         le = timed("local_energy alone", () -> CUDA.@sync NQSCore.local_energy(vs_gpu, H, b.states))
         if lg !== nothing && eg !== nothing
             @printf("  %-46s %11.1fx\n", "reverse / forward", eg / lg)
@@ -320,14 +400,17 @@ let spec = Spin(1 // 2), nsites = NSITES
             for (label, f, arg) in (("logtwocosh reduction", f_red, u),
                                     ("complex matmul", f_mm, V))
                 fw = timed("  $label, forward", () -> CUDA.@sync f(arg))
-                rv = timed("  $label, reverse",
-                           () -> CUDA.@sync Zygote.gradient(f, arg))
-                fw === nothing || rv === nothing ||
-                    @printf("  %-46s %11.1fx\n", "    reverse / forward", rv / fw)
+                for (engine, backend) in ENGINES
+                    rv = timed("  $label, reverse ($engine)",
+                               () -> CUDA.@sync gradient_of(backend, f, arg))
+                    fw === nothing || rv === nothing ||
+                        @printf("  %-46s %11.1fx\n",
+                                "    reverse / forward ($engine)", rv / fw)
+                end
             end
         catch err
-            println("      the split measurement failed: ",
-                    first(split(sprint(showerror, err), '\n')))
+            println("      the split measurement failed:")
+            failed("the two halves of the layer", err)
         end
 
         # The bisection. `energy_gradient` is a ladder of four wrappers around the model, and
@@ -353,32 +436,42 @@ let spec = Spin(1 // 2), nsites = NSITES
             no_restore(θ) = NQSCore._gradient_loss(a, θ, xs, c)
             model_only(θ) = sum(real, log_amplitude(a, θ, xs))
 
+            # The forward pass is the same arithmetic whichever engine differentiates it, so it
+            # is measured once and every engine's ladder is read against it.
             t_fwd = timed("  the whole closure, forward only", () -> CUDA.@sync full(split))
-            t_full = timed("  + split + restore + cotangent + model",
-                           () -> CUDA.@sync Zygote.gradient(full, split))
-            t_nosplit = timed("  - split", () -> CUDA.@sync Zygote.gradient(no_split, flat))
-            t_norestore = timed("  - split - restore",
-                                () -> CUDA.@sync Zygote.gradient(no_restore, θ_gpu))
-            t_model = timed("  - split - restore - cotangent",
-                            () -> CUDA.@sync Zygote.gradient(model_only, θ_gpu))
 
-            rungs = (("the real/imag split", t_full, t_nosplit),
-                     ("restore, differentiated", t_nosplit, t_norestore),
-                     ("the cotangent", t_norestore, t_model))
-            println("\n  what each rung costs")
-            for (label, upper, lower) in rungs
-                upper === nothing || lower === nothing ||
-                    @printf("  %-46s %12s\n", label,
-                            BenchmarkTools.prettytime((upper - lower) * 1e9))
+            # The engine is a heading rather than part of each label, so that the rung names stay
+            # exactly what `../reactant` prints and the two reports can be diffed.
+            for (engine, backend) in ENGINES
+                println("\n  ", engine)
+                t_full = timed("  + split + restore + cotangent + model",
+                               () -> CUDA.@sync gradient_of(backend, full, split))
+                t_nosplit = timed("  - split",
+                                  () -> CUDA.@sync gradient_of(backend, no_split, flat))
+                t_norestore = timed("  - split - restore",
+                                    () -> CUDA.@sync gradient_of(backend, no_restore, θ_gpu))
+                t_model = timed("  - split - restore - cotangent",
+                                () -> CUDA.@sync gradient_of(backend, model_only, θ_gpu))
+
+                rungs = (("the real/imag split", t_full, t_nosplit),
+                         ("restore, differentiated", t_nosplit, t_norestore),
+                         ("the cotangent", t_norestore, t_model))
+                println("\n  what each rung costs")
+                for (label, upper, lower) in rungs
+                    upper === nothing || lower === nothing ||
+                        @printf("  %-46s %12s\n", label,
+                                BenchmarkTools.prettytime((upper - lower) * 1e9))
+                end
+                t_model === nothing ||
+                    @printf("  %-46s %12s\n", "the model's own reverse pass",
+                            BenchmarkTools.prettytime(t_model * 1e9))
+                t_fwd === nothing || t_full === nothing ||
+                    @printf("  %-46s %11.1fx\n", "closure reverse / closure forward",
+                            t_full / t_fwd)
             end
-            t_model === nothing ||
-                @printf("  %-46s %12s\n", "the model's own reverse pass",
-                        BenchmarkTools.prettytime(t_model * 1e9))
-            t_fwd === nothing || t_full === nothing ||
-                @printf("  %-46s %11.1fx\n", "closure reverse / closure forward",
-                        t_full / t_fwd)
         catch err
-            println("      the bisection failed: ", first(split(sprint(showerror, err), '\n')))
+            println("      the bisection failed:")
+            failed("bisecting energy_gradient", err)
         end
 
         # The ladder above put 3.516 ms of a 4.167 ms gradient inside the model, and the two
@@ -403,13 +496,16 @@ let spec = Spin(1 // 2), nsites = NSITES
             r_hidden(θ) = sum(real, sum(lt, θ.weight * xs_real .+ θ.hidden; dims=1))
             r_mm(θ) = sum(real, θ.weight * xs_real .+ θ.hidden)
 
-            for (label, f) in (("through LuxAnsatz, batch as built", r_ansatz),
-                               ("through Lux.apply, real batch", r_apply),
-                               ("the layer directly, real batch", r_layer),
-                               ("the layer body inlined, real batch", r_body),
-                               ("...without the visible term", r_hidden),
-                               ("...matmul and bias only", r_mm))
-                timed("  $label", () -> CUDA.@sync Zygote.gradient(f, θ_gpu))
+            for (engine, backend) in ENGINES
+                println("\n  ", engine)
+                for (label, f) in (("through LuxAnsatz, batch as built", r_ansatz),
+                                   ("through Lux.apply, real batch", r_apply),
+                                   ("the layer directly, real batch", r_layer),
+                                   ("the layer body inlined, real batch", r_body),
+                                   ("...without the visible term", r_hidden),
+                                   ("...matmul and bias only", r_mm))
+                    timed("  $label", () -> CUDA.@sync gradient_of(backend, f, θ_gpu))
+                end
             end
 
             # The one type question in the whole path. Parameters are `ComplexF64` and the
@@ -446,12 +542,16 @@ let spec = Spin(1 // 2), nsites = NSITES
             # against a real one. If this is small, the fix is one line in `_input_type` —
             # promote the batch once, on a small array, rather than forcing a promotion inside
             # every BLAS call on both sides of the derivative.
+            #
+            # This one stays on the reference engine. The question is which cuBLAS kernel the
+            # product reaches, not which engine asks for it, and answering it twice would say
+            # the same thing twice.
             r_layer_c(θ) = sum(real, first(layer(xc, θ, st)))
             timed("  the layer differentiated, ComplexF64 batch",
-                  () -> CUDA.@sync Zygote.gradient(r_layer_c, θ_gpu))
+                  () -> CUDA.@sync gradient_of(BACKEND, r_layer_c, θ_gpu))
         catch err
-            println("      the model bisection failed: ",
-                    first(split(sprint(showerror, err), '\n')))
+            println("      the model bisection failed:")
+            failed("bisecting the model", err)
         end
     end
 
@@ -537,7 +637,8 @@ let spec = Spin(1 // 2), nsites = NSITES
         ok = Array(dev_k) == host_k && Array(dev_c) == host_c && Array(dev_m) == host_m
         println("  device kernel matches the host kernel: ", ok)
     catch err
-        println("  device kernel FAILED: ", first(split(sprint(showerror, err), '\n')))
+        println("  device kernel FAILED:")
+        failed("the device kernel", err)
     end
 
     # The unpacking that turns packed states into the network's input. On the host it produces
@@ -552,7 +653,8 @@ let spec = Spin(1 // 2), nsites = NSITES
         ok_x = Array(dev_x) == Float64.(host_x)
         println("  device unpacking matches the host unpacking: ", ok_x)
     catch err
-        println("  device unpacking FAILED: ", first(split(sprint(showerror, err), '\n')))
+        println("  device unpacking FAILED:")
+        failed("device unpacking", err)
     end
 
     t_host = timed("connections on host (kernel only)",
@@ -694,7 +796,8 @@ let n = 2048, p = 4096
          timed("matrix-free solve, CUDA",
                () -> CUDA.@sync solve(cg, QuantumGeometricTensor(X_gpu), g_gpu, shift)))
     catch err
-        println("      device solve unavailable: ", first(split(sprint(showerror, err), '\n')))
+        println("      device solve unavailable:")
+        failed("the device SR solve", err)
         (nothing, nothing)
     end
     compare("forming the tensor: speedup", t_form_cpu, t_form_gpu)
@@ -703,4 +806,22 @@ let n = 2048, p = 4096
     @printf("\n  the tensor this avoids allocating: %.0f MB\n", p * p * 8 / 2^20)
 end
 
+# ============================================================================== the tally
+
+# Most of the device paths here reached hardware for the first time in this suite, so a wall of
+# FAILED is a plausible outcome rather than a broken run. Counting them means the run says so at
+# the end instead of leaving it to be spotted among four hundred lines of output.
+println()
+if isempty(FAILURES)
+    println("no failures")
+else
+    println(length(FAILURES), " failure", length(FAILURES) == 1 ? "" : "s", ":")
+    for (label, headline, _) in FAILURES
+        println("  * ", label, ": ", headline)
+    end
+    for (label, _, text) in FAILURES
+        println("\n", "-"^78, "\n", label, "\n")
+        println(text)
+    end
+end
 println()

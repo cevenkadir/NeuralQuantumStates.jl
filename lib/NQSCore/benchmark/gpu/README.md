@@ -6,6 +6,28 @@ This environment is deliberately separate from every package in the repository, 
 in the stack acquires a GPU dependency. `CUDA` is a weak dependency of `NQSOptimisers` and a
 direct dependency of nothing.
 
+## One AD engine, and why
+
+Zygote only. The engine is still an axis in the source (`ENGINES`), so adding a second one is a
+single line, but both candidates are out for reasons worth recording.
+
+**Enzyme was tried here and removed.** On CUDA arrays its failed reverse-mode compilations leave
+the GPUArrays allocator double-releasing buffers. BenchmarkTools runs `gcscrub` before every
+trial, so the wreckage surfaces as `ArgumentError("Attempt to release freed data")` inside
+whichever *later, unrelated* measurement happens to trigger the collection — including Zygote
+ones. That corrupts the baseline this file exists to hold, which is too high a price for a column
+whose answer is already known.
+
+[`../reactant`](../reactant) answered it on the CPU, where nothing else was at risk, using a
+control rung to isolate the cause: Enzyme has no reverse rule for a complex `zgemm`, which the
+differentiated region always reaches because `input_type` answers `eltype(θ)`. Given a real batch
+Enzyme works and is 2.2× *slower* than Zygote. Nothing was lost.
+
+**Reactant is absent for a different reason.** XLA preallocates the bulk of the card when it
+initializes and CUDA.jl keeps its own pool, so the two cannot share a process. That column lives
+in [`../reactant`](../reactant), which prints the same rung labels so the two reports read side
+by side — but on whatever hardware each one ran, which its header states.
+
 ## Setup
 
 Two commands, from the repository root. There is nothing to configure — the environment declares
