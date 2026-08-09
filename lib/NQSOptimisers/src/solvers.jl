@@ -4,11 +4,9 @@
 How to solve the linear system at the heart of a preconditioned update.
 
 Every stochastic-reconfiguration variant reduces to solving `(A + λI) x = b` for a symmetric
-positive-semidefinite `A`. Keeping that behind an interface is not ceremony: the geometric
-tensor is routinely **singular**, because redundant parameter directions and directions no
-sample explores both produce exact zero modes. Which regularization is used is therefore a real
-choice with real consequences, not an implementation detail — and it is also the seam where a
-GPU solver attaches, since the geometric tensor is exactly the object worth keeping on a device.
+positive-semidefinite `A`. The geometric tensor is routinely **singular** — redundant parameter
+directions and directions no sample explores both give exact zero modes — so how it is handled
+is a real choice, and this is also where a GPU solver attaches.
 
 # Interface
     solve(solver, A, b, shift) -> x
@@ -28,9 +26,8 @@ function solve end
 Dense Cholesky factorization of the shifted system.
 
 The fastest option when the matrix fits in memory and the shift is large enough to make it
-positive definite. Falls back to a symmetric indefinite factorization if Cholesky fails, which
-happens when the shift is too small to cover the zero modes — silently returning garbage there
-would be worse than the extra cost.
+positive definite. Falls back to a symmetric indefinite factorization when Cholesky fails, which
+means the shift did not cover the zero modes.
 """
 struct CholeskySolver <: AbstractLinearSolver end
 
@@ -46,10 +43,8 @@ end
 
 What [`CholeskySolver`](@ref) does when the shift did not cover the tensor's zero modes.
 
-Bunch–Kaufman handles the indefinite case rather than returning a meaningless answer. It is
-split out because it is the one step of the solve with no accelerator equivalent — cuSOLVER
-exposes Cholesky and LU but not Bunch–Kaufman — so a GPU extension can replace exactly this
-without touching the arithmetic above it.
+Split out because it is the one step with no accelerator equivalent — cuSOLVER exposes Cholesky
+and LU but not Bunch–Kaufman — so a GPU extension can replace exactly this.
 """
 indefinite_fallback(M, A, b::AbstractVector, shift::Real) = bunchkaufman(M; check=false) \ b
 
@@ -58,11 +53,9 @@ indefinite_fallback(M, A, b::AbstractVector, shift::Real) = bunchkaufman(M; chec
 
 Moore–Penrose pseudo-inverse via SVD, discarding singular values below `rtol` times the largest.
 
-The most robust option, and the one to reach for when the geometric tensor is genuinely
-singular. Rather than inflating the small singular values as a diagonal shift does, this
-**projects out** the corresponding directions entirely: the update simply makes no progress
-along directions the samples carry no information about, instead of making a wildly large
-and arbitrary move along them.
+The most robust option. Rather than inflating small singular values as a diagonal shift does,
+this projects the corresponding directions out: the update makes no progress along directions
+the samples carry no information about, instead of an arbitrarily large move along them.
 
 Costs an SVD, so it is for small parameter counts or for diagnosis.
 """
@@ -80,9 +73,9 @@ end
 
 Iterative solve by conjugate gradients, through KrylovKit.
 
-Never forms a factorization, so it scales to parameter counts where a dense solve is
-impossible. It needs only the action of the matrix on a vector, which is what makes a
-matrix-free geometric tensor usable.
+Never forms a factorization, so it scales to parameter counts where a dense solve is impossible.
+Needs only the action of the matrix on a vector, which is what makes a matrix-free geometric
+tensor usable.
 """
 struct ConjugateGradientSolver <: AbstractLinearSolver
     maxiter::Int
@@ -93,12 +86,9 @@ ConjugateGradientSolver(; maxiter::Integer=1000, tol::Real=1e-10) =
 
 function solve(s::ConjugateGradientSolver, A, b::AbstractVector, shift::Real)
     op = x -> A * x + shift * x
-    # `ishermitian` and `issymmetric` are what actually select conjugate gradients. KrylovKit
-    # cannot see inside a function operator, so without them it falls back to GMRES — which
-    # solves the same system, but with no use made of the symmetry and, on an ill-conditioned
-    # geometric tensor, orders of magnitude more slowly. `isposdef` alone is not enough.
-    # The interface's contract is a symmetric positive-semidefinite `A`, so asserting both is
-    # exactly as true as the contract.
+    # These flags are what select conjugate gradients. KrylovKit cannot see inside a function
+    # operator, so without them it falls back to GMRES — same answer, orders of magnitude slower
+    # on an ill-conditioned tensor. `isposdef` alone is not enough.
     x, _ = linsolve(
         op, b; maxiter=s.maxiter, tol=s.tol,
         ishermitian=true, issymmetric=eltype(b) <: Real, isposdef=true

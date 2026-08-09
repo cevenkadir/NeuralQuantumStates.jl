@@ -5,9 +5,9 @@
 Stochastic reconfiguration, also known as the natural gradient or imaginary-time projection.
 
 Plain gradient descent follows the steepest direction in *parameter* space, which is the wrong
-geometry: two parameters can be scaled arbitrarily relative to one another without changing the
-wavefunction at all. Stochastic reconfiguration instead follows the steepest direction in
-*state* space, by preconditioning the gradient with the quantum geometric tensor
+geometry: two parameters can be rescaled against each other without changing the wavefunction.
+Stochastic reconfiguration follows the steepest direction in *state* space instead, by
+preconditioning the gradient with the quantum geometric tensor
 
 ```math
 S_{kk'} = \\mathrm{Re} \\left[ \\langle O_k^* O_{k'} \\rangle
@@ -23,17 +23,16 @@ and solving `S δ = ∇E` for the update direction.
     `diag_shift = 0.01` and reduce if the energy plateaus above the ground state while its
     variance stays large.
 
-This is what rescues the ordered regime. Plain descent stalls there because the gradient
-carries a factor of the Born probability `p(s)`, which vanishes for exactly the configurations
-whose amplitude needs to grow; `S` carries the same factor and dividing by it undoes the
-suppression.
+This is what rescues the ordered regime, where plain descent stalls: the gradient carries a
+factor of the Born probability `p(s)`, which vanishes for exactly the configurations whose
+amplitude needs to grow, and `S` carries the same factor.
 
 # Fields
 - `diag_shift`: absolute regularization `λ` added to the diagonal. The geometric tensor is
-  routinely singular — redundant parameters and unexplored directions both give exact zero
-  modes — so some regularization is mandatory rather than optional.
-- `diag_scale`: regularization relative to each diagonal entry, which tracks the tensor's own
-  magnitude as it changes during a run. See `_regularize`.
+  routinely singular — redundant parameters and unexplored directions give exact zero modes —
+  so some regularization is mandatory.
+- `diag_scale`: regularization relative to each diagonal entry, tracking the tensor's own
+  magnitude as it changes during a run.
 - `solver`: an [`AbstractLinearSolver`](@ref).
 - `mode`: `:sr` builds the `P × P` matrix `S`, `:minsr` builds the `N × N` matrix instead (see
   below), `:matrixfree` builds neither, and `:auto` picks whichever of the first two is smaller.
@@ -44,9 +43,9 @@ suppression.
 # `:matrixfree`
 
 Both `:sr` and `:minsr` form a square matrix — `P × P` or `2N × 2N` — and for a real network
-that matrix, not the sampling, is what exhausts memory first. `:matrixfree` wraps the design
-matrix in a [`QuantumGeometricTensor`](@ref) whose only operation is multiplication, and hands
-that to an iterative solver, so nothing square is ever allocated. It requires
+that matrix, not the sampling, exhausts memory first. `:matrixfree` wraps the design matrix in a
+[`QuantumGeometricTensor`](@ref) whose only operation is multiplication and hands that to an
+iterative solver, so nothing square is allocated. It requires
 [`ConjugateGradientSolver`](@ref); a direct solver has nothing to factorize.
 
 # The two forms are the same update
@@ -58,11 +57,10 @@ parts and stacked, `S = XᵀX` and `∇E = 2Xᵀε`. The identity
 (X^T X + \\lambda I)^{-1} X^T = X^T (X X^T + \\lambda I)^{-1}
 ```
 
-means the update can be computed either from the `P × P` matrix `XᵀX` or from the `N × N`
-matrix `XXᵀ`. They agree exactly — not approximately — so the choice is purely one of cost.
-For a neural network with far more parameters than samples, which is the usual case, the
-second is dramatically cheaper. That form is the kernel trick, known in this context as MinSR
-or SRt.
+means the update can come either from the `P × P` matrix `XᵀX` or from the `N × N` matrix
+`XXᵀ`. They agree exactly, so the choice is one of cost: with far more parameters than samples,
+the usual case for a network, the second is dramatically cheaper. That is the kernel trick,
+known here as MinSR or SRt.
 """
 struct StochasticReconfiguration{S<:AbstractLinearSolver,C} <: AbstractPreconditioner
     diag_shift::Float64
@@ -88,28 +86,12 @@ struct StochasticReconfiguration{S<:AbstractLinearSolver,C} <: AbstractPrecondit
 end
 
 """
-    _regularize(A, shift, scale) -> A + shift*I + scale*Diagonal(diag(A))
+    _regularize(A, scale) -> A + scale * Diagonal(diag(A))
 
-Apply both forms of regularization.
-
-`shift` is an **absolute** addition to the diagonal, and `scale` is one **relative** to each
-diagonal entry (Sorella's original prescription). A relative shift tracks the tensor's own
-magnitude, which changes over the course of an optimization, so a value chosen at the start
-does not become negligible or overwhelming later.
-
-`diag_scale` defaults to zero — the absolute shift alone is the common case, and the relative
-form is offered rather than imposed. Increasing either one damps the update.
-
-!!! note "Regularization is not a substitute for a sensible step size"
-    The geometric tensor is genuinely ill-conditioned — condition numbers of `1e15` are
-    ordinary, since redundant parameter directions give exact zero modes — but that does not by
-    itself make the update wrong. A run that stalls at a non-eigenstate while the gradient
-    stays perfectly ordinary is usually **overshooting**: the preconditioned update can be two
-    orders of magnitude larger than the gradient, so a learning rate tuned for plain descent is
-    far too large for stochastic reconfiguration. Reach for a smaller step or a larger shift
-    before concluding the conditioning is at fault.
+Sorella's relative regularization, which tracks the tensor's own magnitude as it changes over a
+run. The absolute `diag_shift` is applied by [`solve`](@ref), not here.
 """
-function _regularize(A::AbstractMatrix, shift::Real, scale::Real)
+function _regularize(A::AbstractMatrix, scale::Real)
     iszero(scale) && return A
     return A + scale * Diagonal(diag(A))
 end
@@ -119,21 +101,17 @@ end
 
 The real design matrix `X` and residual `ε` that both forms of the update are built from.
 
-`X` is the centered log-derivative matrix scaled by `sqrt(p)`, with its real and imaginary parts
+`X` is the centered log-derivative matrix scaled by `sqrt(p)`, with real and imaginary parts
 stacked into a `2N × P` **real** matrix; `ε` is the correspondingly stacked centered local
-energy. Stacking rather than working in complex arithmetic is what makes `Re[X†X] = XᵀX`
-literally true, so the kernel-trick identity applies without any special-casing.
-
-Centering is not optional: it removes the direction corresponding to a global change of
-normalization, which is unphysical and would otherwise be an exact zero mode of the geometric
-tensor.
+energy. Stacking rather than using complex arithmetic makes `Re[X†X] = XᵀX` literally true, so
+the kernel-trick identity applies with no special-casing.
 """
 function _weighted_design(O::AbstractMatrix, E::AbstractVector, weights)
     n = length(E)
     p = weights === nothing ? fill(1 / n, n) : weights ./ sum(weights)
     sqrt_p = sqrt.(p)
 
-    Ō = O .- sum(p .* O; dims=1)                  # centered log-derivatives
+    Ō = centered(O, weights)
     Ē = sum(p .* E)
 
     X = sqrt_p .* Ō
@@ -170,11 +148,11 @@ function NQSCore.precondition(
         ))
         solve(sr.solver, QuantumGeometricTensor(X, sr.diag_scale), gradient, sr.diag_shift)
     elseif mode === :sr
-        A = _regularize(transpose(X) * X, sr.diag_shift, sr.diag_scale)
+        A = _regularize(transpose(X) * X, sr.diag_scale)
         solve(sr.solver, A, gradient, sr.diag_shift)
     else
         # (XᵀX + λI)⁻¹ Xᵀ b == Xᵀ (XXᵀ + λI)⁻¹ b, exactly.
-        A = _regularize(X * transpose(X), sr.diag_shift, sr.diag_scale)
+        A = _regularize(X * transpose(X), sr.diag_scale)
         transpose(X) * solve(sr.solver, A, 2 .* ε, sr.diag_shift)
     end
 
@@ -188,8 +166,8 @@ end
 
 No preconditioning: the update is the plain energy gradient.
 
-Present so that a driver can treat plain gradient descent and stochastic reconfiguration
-uniformly, and so that the two can be compared under otherwise identical conditions.
+Present so a driver can treat plain gradient descent and stochastic reconfiguration uniformly,
+and so the two can be compared under identical conditions.
 """
 struct Identity <: AbstractPreconditioner end
 
@@ -203,9 +181,8 @@ end
 
 Run a variational optimization, returning the energy at every step.
 
-This is the smallest useful driver: no logging, no checkpointing, no early stopping. Those
-belong with the umbrella package; what is here is enough to test that a preconditioner actually
-descends.
+The smallest useful driver: no logging, no checkpointing, no early stopping — those belong with
+the umbrella package. This is enough to test that a preconditioner descends.
 
 `callback(iteration, stats, state)` runs after each step if given.
 """
