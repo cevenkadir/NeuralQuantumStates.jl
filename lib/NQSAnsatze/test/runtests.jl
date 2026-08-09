@@ -141,7 +141,6 @@ end
             # BLAS has a kernel for. Promoting both was measured: 4.4x on the layer's reverse
             # pass, 13% worse on `expect` and 78% worse on a Metropolis sweep.
             @test eltype(θ.weight) <: Complex
-            @test NQSAnsatze._input_type(θ) === real(eltype(θ.weight))
             @test NQSCore.input_type(a, θ) === eltype(θ.weight)
 
             # A real network asks for a real batch: this is about matching the parameters, not
@@ -150,12 +149,41 @@ end
             θr = init_parameters(ar, rng)
             @test NQSCore.input_type(ar, θr) <: Real
 
-            # Whatever the type, the answer is the same. A wider batch must pass through
-            # untouched rather than being demoted back — which would throw, or silently drop
-            # the imaginary part.
+            # Whatever the type, the answer is the same.
             @test log_amplitude(a, θ, ComplexF64.(x)) ≈ logψ
             @test log_amplitude(a, θ, Float64.(x)) ≈ logψ
-            @test NQSAnsatze._as_input(Float64, ComplexF64.(x)) == ComplexF64.(x)
+
+            # And a batch that is already complex must reach the network that way. Comparing
+            # log-amplitudes cannot see this — narrowing a complex batch whose imaginary part
+            # is zero gives the same answer — so ask the layer what it was handed. Getting it
+            # wrong costs a BLAS kernel in every reverse pass.
+            seen = Ref{Any}(nothing)
+            probe = LuxAnsatz(
+                Lux.WrappedFunction(z -> (seen[] = eltype(z); vec(sum(z; dims=1)))),
+                dof, nsites; rng=rng,
+            )
+            log_amplitude(probe, θ, ComplexF64.(x))
+            @test seen[] === ComplexF64
+            log_amplitude(probe, θ, x)              # rationals, against complex parameters
+            @test seen[] === Float64
+        end
+
+        @testset "a one-row model output is a complex log-amplitude" begin
+            # `Dense(n => 1)` is the obvious way to write a scalar output and returns a
+            # `(1, batch)` matrix, so this branch is ordinary rather than speculative.
+            a1 = LuxAnsatz(Dense(nsites => 1), dof, nsites; rng=rng)
+            θ1 = init_parameters(a1, rng)
+            y = log_amplitude(a1, θ1, x)
+            @test y isa AbstractVector
+            @test length(y) == length(b.states)
+            # `Dense` initialises in `Float32`, and the batch follows its parameters.
+            T = real(eltype(θ1.weight))
+            @test y == vec(first(Lux.apply(a1.model, T.(x), θ1, a1.states)))
+        end
+
+        @testset "a model returning three rows is rejected" begin
+            a3 = LuxAnsatz(Dense(nsites => 3), dof, nsites; rng=rng)
+            @test_throws ArgumentError log_amplitude(a3, init_parameters(a3, rng), x)
         end
 
         @testset "a two-row model output is read as re/im" begin

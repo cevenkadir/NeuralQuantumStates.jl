@@ -61,15 +61,6 @@ NQSCore.default_basis(a::LuxAnsatz) =
     SymBasis.Bases.basis(SymBasis.dof_object(a.dof), a.nsites)
 
 """
-The narrowest real type that can hold a configuration, which is what a forward pass wants: a
-configuration is a real number and a wider batch buys nothing there.
-
-Deliberately not the type the network's arithmetic is in — [`NQSCore.input_type`](@ref) answers
-that, and is honoured only for the one batch a derivative follows.
-"""
-_input_type(θ) = (r = _reference_array(θ); r === nothing ? Float64 : real(eltype(r)))
-
-"""
 The type this network computes in, usually complex for a wavefunction.
 
 Answering lets `NQSCore` build a to-be-differentiated batch in this type directly, so that the
@@ -98,18 +89,6 @@ colocate(reference, input::AbstractArray) =
     _is_host(reference) == _is_host(input) ? input :
     copyto!(similar(reference, eltype(input), size(input)), input)
 
-"""
-The batch in a type that holds both it and `T`, without a copy when it already is one.
-
-`T` is the *narrowest* type the network can take, so this promotes and never converts: a batch
-that is already wider — a complex one built for a derivative — is acceptable as it stands, and
-narrowing it would drop the imaginary part or throw.
-"""
-function _as_input(::Type{T}, x::AbstractArray) where {T}
-    S = promote_type(eltype(x), T)
-    return S === eltype(x) ? x : S.(x)
-end
-
 # The transfer is a `copyto!`, which reverse-mode AD refuses to differentiate. It does not have
 # to: configurations are data, not parameters, and nothing needs a gradient with respect to
 # them. Saying so is what lets the gradient reach `θ` instead of stopping here.
@@ -123,10 +102,15 @@ end
 _is_host(_) = true
 
 function NQSCore.log_amplitude(a::LuxAnsatz, θ, x::AbstractMatrix)
-    # Conversion and transfer in one line, so the host/device boundary is in one place. Both are
-    # skipped when the batch already has the right type in the right memory.
-    T = _input_type(θ)
-    input = colocate(_reference_array(θ), _as_input(T, x))
+    reference = _reference_array(θ)
+
+    # Promote, never convert. A configuration is real, so a forward pass wants the narrowest
+    # real type the parameters imply — but `NQSCore` builds the batch a derivative follows in
+    # the network's own complex type, and narrowing that would drop the imaginary part.
+    narrowest = reference === nothing ? Float64 : real(eltype(reference))
+    T = promote_type(eltype(x), narrowest)
+    input = colocate(reference, T === eltype(x) ? x : T.(x))
+
     y, _ = Lux.apply(a.model, input, θ, a.states)
     return _as_log_amplitude(y)
 end
