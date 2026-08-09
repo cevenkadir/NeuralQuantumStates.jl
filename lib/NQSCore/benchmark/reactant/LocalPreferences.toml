@@ -1,10 +1,20 @@
-# Compilation is the dominant cost of a run here: six regions at 3-25 s each, against
-# measurements in milliseconds. XLA can persist compiled and autotuned kernels to disk, which
-# turns that into a once-per-machine cost rather than a once-per-run one.
+# Compilation dominates a run here: six regions at 3-25 s each, against measurements in
+# milliseconds. XLA can persist compiled and autotuned kernels to disk, which would turn that
+# into a once-per-machine cost.
 #
-# The cache directory is deliberately not set. Reactant creates a versioned one keyed on the
-# XLA and Reactant_jll versions, and setting it by hand is how a stale cache from an older
-# build gets loaded into a newer one. `Reactant.clear_compilation_cache!()` empties it.
+# `persistent_kernel_cache_enabled` is deliberately NOT set. Turning it on makes Reactant disable
+# `xla_gpu_enable_llvm_module_compilation_parallelism` — deterministic output is the point of a
+# kernel cache — and on Reactant 0.2.278 that field is absent from its `DebugOptions`, so every
+# GPU compilation dies before it starts:
+#
+#   ArgumentError: Failed to assign fields
+#   (:xla_gpu_enable_llvm_module_compilation_parallelism,) to object with fields (...)
+#
+# It is off by default upstream. Leave it off until a Reactant release fixes the mismatch; the
+# CPU path never reaches that code, which is why this only ever appeared on a GPU.
+#
+# The cache directory is unset on purpose too. Reactant creates a versioned one keyed on the XLA
+# and Reactant_jll versions, and naming it by hand is how a stale cache from an older build gets
+# loaded into a newer one. `Reactant.clear_compilation_cache!()` empties it.
 [Reactant]
 persistent_cache_enabled = true
-persistent_kernel_cache_enabled = true
