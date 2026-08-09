@@ -101,8 +101,8 @@ end
 
 """Real parameters: one pass over the stacked real and imaginary parts of `log ψ`."""
 function _log_derivatives(
-    ansatz, flat::AbstractVector{<:Real}, restore, x, backend, ::Bool
-)
+    ansatz, flat::AbstractVector{<:Real}, restore::R, x, backend, ::Bool
+) where {R}
     batch = size(x, 2)
     function stacked(p)
         ψ = log_amplitude(ansatz, restore(p), x)
@@ -114,8 +114,8 @@ end
 
 """Complex parameters: differentiate with respect to the real and imaginary parts separately."""
 function _log_derivatives(
-    ansatz, flat::AbstractVector{<:Complex}, restore, x, backend, holomorphic::Bool
-)
+    ansatz, flat::AbstractVector{<:Complex}, restore::R, x, backend, holomorphic::Bool
+) where {R}
     batch = size(x, 2)
     n = length(flat)
     split = vcat(real.(flat), imag.(flat))
@@ -158,7 +158,7 @@ function match_parameter_shape(∇::AbstractVector, θ)
     return _match_parameter_shape(∇, flat, restore)
 end
 
-function _match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore)
+function _match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore::R) where {R}
     n = length(flat)
     if eltype(flat) <: Complex && length(∇) == 2n
         return restore(@views ∇[1:n] .+ im .* ∇[(n+1):(2n)])
@@ -221,7 +221,9 @@ function _gradient_cotangent(E::AbstractVector, weights::Union{Nothing,AbstractV
 end
 
 """Real parameters: differentiate the scalar loss directly."""
-function _energy_gradient(ansatz, flat::AbstractVector{<:Real}, restore, x, c, backend)
+function _energy_gradient(
+    ansatz, flat::AbstractVector{<:Real}, restore::R, x, c, backend
+) where {R}
     loss(p) = _gradient_loss(ansatz, restore(p), x, c)
     return DifferentiationInterface.gradient(loss, backend, flat)
 end
@@ -230,7 +232,9 @@ end
 Complex parameters: differentiate with respect to real and imaginary parts as `2n` independent
 real parameters, matching the non-holomorphic convention of [`log_derivatives`](@ref).
 """
-function _energy_gradient(ansatz, flat::AbstractVector{<:Complex}, restore, x, c, backend)
+function _energy_gradient(
+    ansatz, flat::AbstractVector{<:Complex}, restore::R, x, c, backend
+) where {R}
     n = length(flat)
     split = vcat(real.(flat), imag.(flat))
     function loss(v)

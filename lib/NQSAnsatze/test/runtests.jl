@@ -53,6 +53,19 @@ end
         end
     end
 
+    @testset "layers carry their element type as a parameter" begin
+        # Not as a `T::Type` field, which is abstract: every read of it is a dynamic lookup and
+        # the layer is not `isbits`. The manual's prescription is a type parameter, and this
+        # test is what stops the field coming back.
+        for layer in (RBM(4, 2), Jastrow(4),
+                      SymmetricRBM([circshift(1:4, k) for k in 0:3], 2))
+            @test all(isconcretetype, fieldtypes(typeof(layer)))
+        end
+        @test isbits(RBM(4, 2))
+        @test eltype(Lux.initialparameters(Xoshiro(0), RBM(4, 2; T=ComplexF32)).weight) ===
+              ComplexF32
+    end
+
     @testset "layers evaluate on a batch" begin
         rng = Xoshiro(0)
         nsites, batch = 6, 5

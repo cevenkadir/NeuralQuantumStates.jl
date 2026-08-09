@@ -15,16 +15,15 @@ hidden-unit density: there are `alpha * nsites` hidden units.
 `T` defaults to `ComplexF64` because a wavefunction has a phase and a real RBM can only
 represent a positive one; complex weights give modulus and phase from a single network.
 """
-struct RBM <: Lux.AbstractLuxLayer
+struct RBM{T} <: Lux.AbstractLuxLayer
     nsites::Int
     nhidden::Int
-    T::Type
 end
 
 function RBM(nsites::Integer, alpha::Real=1; T::Type=ComplexF64)
     nhidden = round(Int, alpha * nsites)
     nhidden > 0 || throw(ArgumentError("alpha * nsites must give at least one hidden unit"))
-    return RBM(Int(nsites), nhidden, T)
+    return RBM{T}(Int(nsites), nhidden)
 end
 
 """
@@ -42,8 +41,7 @@ function logtwocosh(z::Number)
     return a + log(exp(z - a) + exp(-z - a))
 end
 
-function Lux.initialparameters(rng::AbstractRNG, layer::RBM)
-    T = layer.T
+function Lux.initialparameters(rng::AbstractRNG, layer::RBM{T}) where {T}
     scale = real(T)(0.01)
     return (
         visible=scale .* randn(rng, T, layer.nsites),
@@ -77,9 +75,8 @@ into a richer ansatz rather than to use alone.
 Only the strict upper triangle is parameterized: `J_{ij}` and `J_{ji}` multiply the same product
 `x_i x_j`, so carrying both would make the geometric tensor singular.
 """
-struct Jastrow{I<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
+struct Jastrow{T,I<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
     nsites::Int
-    T::Type
     # `index[i, j] == k + 1` means the `k`-th coupling; `1` means the padded zero. Precomputed
     # so assembling the matrix is one gather rather than a scatter loop.
     index::I
@@ -93,12 +90,12 @@ function Jastrow(nsites::Integer; T::Type=ComplexF64)
         k += 1
         index[i, j] = k + 1
     end
-    return Jastrow(n, T, index)
+    return Jastrow{T,typeof(index)}(n, index)
 end
 
-function Lux.initialparameters(rng::AbstractRNG, layer::Jastrow)
+function Lux.initialparameters(rng::AbstractRNG, layer::Jastrow{T}) where {T}
     n = layer.nsites
-    return (coupling=real(layer.T)(0.01) .* randn(rng, layer.T, n * (n - 1) ÷ 2),)
+    return (coupling=real(T)(0.01) .* randn(rng, T, n * (n - 1) ÷ 2),)
 end
 Lux.initialstates(::AbstractRNG, ::Jastrow) = NamedTuple()
 Lux.parameterlength(l::Jastrow) = l.nsites * (l.nsites - 1) ÷ 2
@@ -126,13 +123,12 @@ construction**, rather than having to learn it.
 The parameter count drops by roughly the order of the group, and the ansatz cannot waste
 capacity on states the ground state is known not to occupy.
 """
-struct SymmetricRBM{P<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
+struct SymmetricRBM{T,P<:AbstractMatrix{Int}} <: Lux.AbstractLuxLayer
     nsites::Int
     nfilters::Int
     # One permutation per column rather than a vector of vectors, so the whole table moves to a
     # device in one piece.
     permutations::P
-    T::Type
 end
 
 function SymmetricRBM(permutations::AbstractVector, alpha::Real=1; T::Type=ComplexF64)
@@ -145,15 +141,15 @@ function SymmetricRBM(permutations::AbstractVector, alpha::Real=1; T::Type=Compl
     for (k, p) in pairs(permutations)
         table[:, k] = p
     end
-    return SymmetricRBM(nsites, nfilters, table, T)
+    return SymmetricRBM{T,typeof(table)}(nsites, nfilters, table)
 end
 
-function Lux.initialparameters(rng::AbstractRNG, layer::SymmetricRBM)
-    scale = real(layer.T)(0.01)
+function Lux.initialparameters(rng::AbstractRNG, layer::SymmetricRBM{T}) where {T}
+    scale = real(T)(0.01)
     return (
-        visible=scale .* randn(rng, layer.T, 1),
-        hidden=scale .* randn(rng, layer.T, layer.nfilters),
-        weight=scale .* randn(rng, layer.T, layer.nfilters, layer.nsites),
+        visible=scale .* randn(rng, T, 1),
+        hidden=scale .* randn(rng, T, layer.nfilters),
+        weight=scale .* randn(rng, T, layer.nfilters, layer.nsites),
     )
 end
 Lux.initialstates(::AbstractRNG, ::SymmetricRBM) = NamedTuple()
