@@ -97,30 +97,6 @@ function _regularize(A::AbstractMatrix, scale::Real)
 end
 
 """
-    _weighted_design(O, E, weights) -> (X, ε)
-
-The real design matrix `X` and residual `ε` that both forms of the update are built from.
-
-`X` is the centered log-derivative matrix scaled by `sqrt(p)`, with real and imaginary parts
-stacked into a `2N × P` **real** matrix; `ε` is the correspondingly stacked centered local
-energy. Stacking rather than using complex arithmetic makes `Re[X†X] = XᵀX` literally true, so
-the kernel-trick identity applies with no special-casing.
-"""
-function _weighted_design(O::AbstractMatrix, E::AbstractVector, weights)
-    n = length(E)
-    p = weights === nothing ? fill(1 / n, n) : weights ./ sum(weights)
-    sqrt_p = sqrt.(p)
-
-    Ō = centered(O, weights)
-    Ē = sum(p .* E)
-
-    X = sqrt_p .* Ō
-    ε = sqrt_p .* (E .- Ē)
-
-    return vcat(real.(X), imag.(X)), vcat(real.(ε), imag.(ε))
-end
-
-"""
     precondition(sr, state, operator) -> (Stats, update)
 
 The stochastic-reconfiguration update direction, together with the energy it was computed from.
@@ -133,7 +109,17 @@ function NQSCore.precondition(
     sr::StochasticReconfiguration, vs::AbstractVariationalState, operator
 )
     est = local_estimators(vs, operator; holomorphic=sr.holomorphic, chunk_size=sr.chunk_size)
-    X, ε = _weighted_design(est.O, est.E, est.weights)
+
+    # The design matrix and residual both forms of the update are built from. Real and
+    # imaginary parts are stacked rather than kept complex, which makes `Re[X†X] = XᵀX`
+    # literally true and lets the kernel-trick identity below apply with no special-casing.
+    p = est.weights === nothing ? fill(1 / length(est.E), length(est.E)) :
+        est.weights ./ sum(est.weights)
+    sqrt_p = sqrt.(p)
+    Xc = sqrt_p .* centered(est.O, est.weights)
+    εc = sqrt_p .* (est.E .- sum(p .* est.E))
+    X = vcat(real.(Xc), imag.(Xc))
+    ε = vcat(real.(εc), imag.(εc))
 
     n_rows, n_params = size(X)
     mode = sr.mode === :auto ? (n_rows < n_params ? :minsr : :sr) : sr.mode
