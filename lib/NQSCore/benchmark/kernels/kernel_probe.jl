@@ -76,6 +76,14 @@ end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 2
 
+# Collect between samples, or the card fills. Every call here returns fresh `configs`, `mels` and
+# `counts` — about a megabyte together — and Julia's collector sees a `ConcretePJRTArray` as a
+# small host object with no idea of the device memory behind it, so it never feels the pressure.
+# `gcscrub` runs before each sample and outside the timed region, so this costs wall-clock and
+# leaves the minimum alone. The same setting had to be added to ../reactant, where the omission
+# filled a 24 GB card with 8049 copies of one 3 MiB gradient.
+BenchmarkTools.DEFAULT_PARAMETERS.gcsample = true
+
 println()
 println("Reactant ", pkgversion(Reactant), "  |  CUDA ", pkgversion(CUDA),
         "  |  KernelAbstractions ", pkgversion(KernelAbstractions))

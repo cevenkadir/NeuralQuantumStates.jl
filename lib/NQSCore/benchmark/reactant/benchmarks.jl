@@ -94,6 +94,16 @@ end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 2
 
+# Collect between samples. Julia's garbage collector sees a `ConcretePJRTArray` as a few hundred
+# bytes of host object and has no idea it is holding megabytes of XLA memory, so it feels no
+# pressure to run — while `@benchmark` discards a fresh result thousands of times. Left off, the
+# `logtwocosh` probe filled a 24 GB card with 8049 copies of its own 3 MiB gradient and the run
+# died inside the allocator.
+#
+# It costs wall-clock and nothing else: `gcscrub` runs *before* each sample, outside the timed
+# region, and the `seconds` budget bounds the whole loop either way — fewer samples, same minimum.
+BenchmarkTools.DEFAULT_PARAMETERS.gcsample = true
+
 # ------------------------------------------------------------------------------- reporting
 
 """
