@@ -32,23 +32,20 @@ for `log ψ` and once inside the differentiated loss. The element type comes fro
 derivative follows.
 """
 function configurations_of(vs::AbstractVariationalState, states::AbstractArray)
+    a, θ = ansatz(vs), parameters(vs)
     flat = vec(states)
-    T = input_type(ansatz(vs), parameters(vs))
-    reference = _reference_array(parameters(vs))
-    reference isa AbstractArray || return _host_configurations(vs, flat, T)
-    return _configurations(vs, flat, T, reference, _device_backend(reference))
-end
+    T = input_type(a, θ)
 
-function _host_configurations(vs::AbstractVariationalState, states::AbstractVector, T)
-    x = ConnectedBasisConfigurations.configurations(
-        dof(ansatz(vs)), states, n_sites(ansatz(vs))
-    )
+    reference = _reference_array(θ)
+    if reference isa AbstractArray
+        backend = device_backend(reference)
+        backend === nothing ||
+            return device_configurations(vs, flat, T, reference, backend)
+    end
+
+    x = ConnectedBasisConfigurations.configurations(dof(a), flat, n_sites(a))
     return T === nothing ? x : T.(x)
 end
-
-_configurations(
-    vs::AbstractVariationalState, states::AbstractVector, T, ::AbstractArray, ::Nothing
-) = _host_configurations(vs, states, T)
 
 """
     NQSCore._reference_array(parameters) -> AbstractArray or nothing
@@ -167,26 +164,43 @@ reduction that follows already runs unchanged on either.
 rather than a device keeps `NQSCore` free of any notion of one; the host implementation ignores
 it, and what a device is remains the business of the KernelAbstractions extension.
 """
-connections(vs::AbstractVariationalState, operator, states::AbstractVector, like) =
-    _connections(vs, operator, states, like, _device_backend(like))
+function connections(vs::AbstractVariationalState, operator, states::AbstractVector, like)
+    backend = device_backend(like)
+    backend === nothing || return device_connections(vs, operator, states, like, backend)
 
-"""
-The KernelAbstractions backend `like` lives on, or `nothing` for host memory.
-
-Always `nothing` here, since without KernelAbstractions there is no backend to name. The
-extension answers properly — and still answers `nothing` for an `Array`, so that loading
-KernelAbstractions does not divert host runs onto its CPU backend.
-"""
-_device_backend(::Any) = nothing
-
-function _connections(
-    vs::AbstractVariationalState, operator, states::AbstractVector, ::AbstractArray, ::Nothing
-)
     a = ansatz(vs)
     res = ConnectedBasisConfigurations.connected_padded(operator, states)
     x = ConnectedBasisConfigurations.configurations(dof(a), vec(res.configs), n_sites(a))
     return x, res.mels
 end
+
+"""
+    NQSCore.device_backend(x) -> backend or nothing
+
+The KernelAbstractions backend `x` lives on, or `nothing` for host memory.
+
+Always `nothing` here, since without KernelAbstractions there is no backend to name. The
+extension answers properly — and still answers `nothing` for an `Array`, so that loading
+KernelAbstractions does not divert host runs onto its CPU backend. It returns the `nothing`
+singleton rather than a flag, so the branches above it fold away at compile time.
+
+[`NQSCore.device_connections`](@ref) and `NQSCore.device_configurations` are the other half:
+declared here, defined only by the extension, and reached only when this answers with a backend.
+"""
+device_backend(::Any) = nothing
+
+"""
+    NQSCore.device_connections(state, operator, packed_states, like, backend) -> (x, mels)
+    NQSCore.device_configurations(state, packed_states, T, reference, backend) -> x
+
+[`connections`](@ref) and [`configurations_of`](@ref) computed on `backend`. Defined by the
+extension KernelAbstractions activates; without it, [`device_backend`](@ref) never returns a
+backend and neither is called.
+"""
+function device_connections end
+
+@doc (@doc device_connections)
+function device_configurations end
 
 """
     local_estimators(state, operator; holomorphic=false) -> (; E, O, weights)

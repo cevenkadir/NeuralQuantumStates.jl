@@ -6,7 +6,7 @@ they expand into never cross the bus.
 
 KernelAbstractions is a weak dependency, so a user who never touches an accelerator loads
 nothing extra and gets the host path, which is the faster one for a CPU. Loading it alone does
-not divert anything either; see `NQSCore._device_backend` below.
+not divert anything either; see `NQSCore.device_backend` below.
 
 The reduction is not here. It lives in `NQSCore` and already runs unchanged on a device array,
 so all this extension supplies is the pair of arrays that feed it.
@@ -24,8 +24,8 @@ An `Array` is answered `nothing` on purpose. `get_backend` would call it `CPU()`
 that would let an unrelated `using` swap every host run onto a launch-per-batch kernel — which
 exists to be portable, not to beat a serial loop over a few thousand samples.
 """
-NQSCore._device_backend(::Array) = nothing
-NQSCore._device_backend(x::AbstractArray) = KernelAbstractions.get_backend(x)
+NQSCore.device_backend(::Array) = nothing
+NQSCore.device_backend(x::AbstractArray) = KernelAbstractions.get_backend(x)
 
 """
 Move `x` onto `backend`, or leave it if it is already somewhere other than host memory. The same
@@ -50,11 +50,7 @@ _device_operator(op, backend) = ConnectedBasisConfigurations.to_backend(
     ConnectedBasisConfigurations.flatten(op), backend
 )
 
-"""The table of local values, in the element type the network works in, resident on `backend`."""
-_local_value_table(::Type{T}, spec, backend) where {T} =
-    _resident(backend, collect(T, ConnectedBasisConfigurations.local_values(spec)))
-
-function NQSCore._configurations(
+function NQSCore.device_configurations(
     vs::NQSCore.AbstractVariationalState, states::AbstractVector, T,
     reference::AbstractArray, backend,
 )
@@ -64,7 +60,9 @@ function NQSCore._configurations(
     # never pays a second pass to widen a real one.
     S = T === nothing ? real(eltype(reference)) : T
 
-    values = _local_value_table(S, NQSCore.dof(a), backend)
+    values = _resident(backend, collect(S, ConnectedBasisConfigurations.local_values(
+        NQSCore.dof(a)
+    )))
     x = KernelAbstractions.allocate(backend, S, nsites, length(states))
     ConnectedBasisConfigurations.configurations!(
         x, values, _resident(backend, states), nsites, backend
@@ -72,7 +70,7 @@ function NQSCore._configurations(
     return x
 end
 
-function NQSCore._connections(
+function NQSCore.device_connections(
     vs::NQSCore.AbstractVariationalState, operator, states::AbstractVector,
     like::AbstractArray, backend,
 )
@@ -97,7 +95,9 @@ function NQSCore._connections(
     # here would need a device-side `maximum` — a launch and a synchronising read — and would
     # then hand the network a non-contiguous view. The extra rows are inert padding.
     T = real(eltype(like))
-    values = _local_value_table(T, NQSCore.dof(a), backend)
+    values = _resident(backend, collect(T, ConnectedBasisConfigurations.local_values(
+        NQSCore.dof(a)
+    )))
     x = KernelAbstractions.allocate(backend, T, nsites, height * n)
     ConnectedBasisConfigurations.configurations!(x, values, configs, nsites, backend)
 

@@ -635,13 +635,13 @@ end
             # `get_backend` would happily call an `Array` a `CPU()` backend. Acting on that
             # would mean an unrelated `using` swapped the tested serial kernel for a
             # launch-per-batch one, on a machine with nothing to launch onto.
-            @test NQSCore._device_backend(zeros(3)) === nothing
-            @test NQSCore._device_backend(zeros(ComplexF64, 3)) === nothing
-            @test NQSCore._device_backend(logψ) === nothing
+            @test NQSCore.device_backend(zeros(3)) === nothing
+            @test NQSCore.device_backend(zeros(ComplexF64, 3)) === nothing
+            @test NQSCore.device_backend(logψ) === nothing
         end
 
-        host = NQSCore._connections(vs, H, b.states, logψ, nothing)
-        device = NQSCore._connections(vs, H, b.states, logψ, CPU())
+        host = NQSCore.connections(vs, H, b.states, logψ)
+        device = NQSCore.device_connections(vs, H, b.states, logψ, CPU())
 
         @testset "the configurations are the same, as floats" begin
             # The host unpacking returns `Rational{Int64}` for a spin, which cannot live on a
@@ -674,7 +674,7 @@ end
             # A `view` is not an `Array`, so it takes the device branch, and KernelAbstractions
             # resolves its backend through the parent — which is how the whole path, dispatch
             # included, is reachable on a machine with no GPU.
-            @test NQSCore._device_backend(view(logψ, :)) == CPU()
+            @test NQSCore.device_backend(view(logψ, :)) == CPU()
             E_device = NQSCore._local_energy(vs, H, b.states, view(logψ, :))
             @test E_device ≈ local_energy(vs, H, b.states)
         end
@@ -692,17 +692,16 @@ end
             @test NQSCore.configurations_of(vs, b.states) ==
                   configurations(spec, b.states, nsites)
 
-            device_x = NQSCore._configurations(vs, b.states, nothing, parameters(vs), CPU())
+            device_x = NQSCore.device_configurations(vs, b.states, nothing, parameters(vs), CPU())
             @test eltype(device_x) === Float64
             @test device_x == Float64.(configurations(spec, b.states, nsites))
 
             # An ansatz that names a type gets it written straight out, rather than a real
             # batch it then has to widen — which for a batch bound for a derivative is the
             # difference between a BLAS product and a generic one in every reverse pass.
-            wide = NQSCore._configurations(vs, b.states, ComplexF64, parameters(vs), CPU())
+            wide = NQSCore.device_configurations(vs, b.states, ComplexF64, parameters(vs), CPU())
             @test eltype(wide) === ComplexF64
             @test wide == ComplexF64.(configurations(spec, b.states, nsites))
-            @test NQSCore._host_configurations(vs, b.states, ComplexF64) == wide
 
             # `LogStateVector` has no opinion, and must not be given one: its parameters are
             # amplitudes rather than network weights, and it looks its configurations up in a
@@ -715,7 +714,7 @@ end
             # handing over the unflattened operator, or the optimization is paying for a
             # transfer per step to avoid one.
             resident = to_backend(flatten(H), CPU())
-            x, mels = NQSCore._connections(vs, resident, b.states, logψ, CPU())
+            x, mels = NQSCore.device_connections(vs, resident, b.states, logψ, CPU())
             @test x == device[1]
             @test mels == device[2]
         end

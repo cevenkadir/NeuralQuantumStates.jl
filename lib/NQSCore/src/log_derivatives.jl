@@ -142,23 +142,24 @@ end
 
 """
     match_parameter_shape(∇, θ) -> gradient
+    match_parameter_shape(∇, flat, restore) -> gradient
 
 Put a raw gradient into the same shape as the parameters, so that `θ .- η .* ∇` is meaningful.
 
 For complex parameters differentiated non-holomorphically, [`log_derivatives`](@ref) returns
 `2n` columns — `∂/∂θ_re` followed by `∂/∂θ_im` — and a gradient built from it inherits that
 length. Descending in the real parameterization means `θ_re -= η g_re` and `θ_im -= η g_im`
-simultaneously, which is exactly `θ -= η (g_re + i g_im)`. Recombining here rather than at the
-call site keeps the promise that a gradient always matches the parameters it belongs to,
-whatever the parameterization: an optimizer should never have to ask how the ansatz was
-parameterized.
-"""
-function match_parameter_shape(∇::AbstractVector, θ)
-    flat, restore = flatten_parameters(θ)
-    return _match_parameter_shape(∇, flat, restore)
-end
+simultaneously, which is exactly `θ -= η (g_re + i g_im)`. Recombining here keeps the promise
+that a gradient always matches the parameters it belongs to, so an optimizer never has to ask
+how the ansatz was parameterized.
 
-function _match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore::R) where {R}
+The three-argument form is for a caller that already holds the output of
+[`flatten_parameters`](@ref) and should not pay to rebuild it.
+"""
+match_parameter_shape(∇::AbstractVector, θ) =
+    match_parameter_shape(∇, flatten_parameters(θ)...)
+
+function match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore::R) where {R}
     n = length(flat)
     if eltype(flat) <: Complex && length(∇) == 2n
         return restore(@views ∇[1:n] .+ im .* ∇[(n+1):(2n)])
@@ -205,7 +206,7 @@ function energy_gradient(
             for r in _chunks(size(x, 2), chunk_size)
         )
     end
-    return _match_parameter_shape(∇, flat, restore)
+    return match_parameter_shape(∇, flat, restore)
 end
 
 """
