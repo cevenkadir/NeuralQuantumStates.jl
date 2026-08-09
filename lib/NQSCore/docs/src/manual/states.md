@@ -97,6 +97,12 @@ GV100 with twelve sites, 4096 configurations and an `RBM(12, 4)`, that host work
 transfer were two thirds of a device `expect`: 5.897 ms against the host's 231.6 ms. Without
 them the same `expect` is **1.753 ms**, or 132×, and `expect_and_grad` 44×.
 
+The samples are unpacked there too, and where that happens follows the *parameters* rather than
+the samples: the batch is an input to the ansatz, and an ansatz runs where its parameters are.
+That array is consumed twice — once for `log ψ` and once inside the differentiated loss — so
+building it on the host puts a conversion and a transfer in the middle of an
+automatic-differentiation pass.
+
 Without `KernelAbstractions` everything still works: the connections are computed on the host
 and moved, which is what the extra `_colocate` step in the kernel is for. Loading
 `KernelAbstractions` on a machine with no accelerator changes nothing either — an `Array` is

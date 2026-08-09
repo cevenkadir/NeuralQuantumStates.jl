@@ -249,6 +249,82 @@ let spec = Spin(1 // 2), nsites = NSITES
         end
     end
 
+    # ============================================ where `expect_and_grad` actually spends
+
+    # The gradient costs 16% on top of `expect` on a host and far more than that on a device,
+    # and that asymmetry is the question this section exists to answer. It should not be there:
+    # `energy_gradient` differentiates a scalar loss over the *samples*, the same batch the
+    # forward pass above covers, so one reverse pass ought to be a small multiple of one
+    # forward pass. Anything much larger is overhead — a host round trip inside the
+    # differentiated function, or a parameter flattening that does not like device memory —
+    # rather than arithmetic, and the breakdown says which.
+    if θ_gpu !== nothing
+        println("\ngradient, broken down")
+        vs_gpu = FullSumState(a, θ_gpu; backend=BACKEND, basis=b)
+        xs = NQSCore.configurations_of(vs_gpu, b.states)
+        @printf("  %-46s %12s\n", "sample batch is on the device",
+                string(!(xs isa Array)))
+
+        lg = timed("log_amplitude on the samples (forward)",
+                   () -> CUDA.@sync log_amplitude(a, θ_gpu, xs))
+        logψ = log_amplitude(a, θ_gpu, xs)
+        p = NQSCore.born_probabilities(logψ)
+        E = NQSCore.local_energy(vs_gpu, H, b.states)
+
+        eg = timed("energy_gradient alone (reverse)",
+                   () -> CUDA.@sync NQSCore.energy_gradient(
+                       a, θ_gpu, xs, E, p; backend=BACKEND))
+        le = timed("local_energy alone", () -> CUDA.@sync NQSCore.local_energy(vs_gpu, H, b.states))
+        if lg !== nothing && eg !== nothing
+            @printf("  %-46s %11.1fx\n", "reverse / forward", eg / lg)
+            println("""
+      A reverse pass is normally two to three times a forward one. Well above that is
+      overhead in the gradient path rather than the arithmetic of differentiating.""")
+        end
+        if le !== nothing && eg !== nothing && g_gpu !== nothing
+            @printf("  %-46s %11.1f%%\n", "the two together, of expect_and_grad",
+                    100 * (le + eg) / g_gpu)
+        end
+
+        # Which part of the reverse pass is it? Two candidates, and they are separable.
+        #
+        # The layer is a complex matmul followed by a reduction through `logtwocosh`.
+        # Zygote's fast broadcast path is real-only; for a complex array it builds one
+        # pullback closure per element, which costs nothing on a host — measured there, the
+        # whole model's reverse is 1.6x its forward and the reduction's is 1.4x — and cannot
+        # work that way on a device at all. If the reduction is what does not survive the
+        # move, an explicit rule for `logtwocosh` fixes it, since `d/dz log(2cosh z) = tanh z`.
+        #
+        # The other candidate is the parameter flattening. `energy_gradient` differentiates
+        # through `restore`, which rebuilds a `NamedTuple` from a `ComponentArray` on every
+        # primal evaluation, and `ComponentArrays` is not obliged to like device memory.
+        println("\n  the two halves of the layer, and the flattening")
+        nh = ALPHA * NSITES
+        try
+            u = CuArray(randn(Xoshiro(0), ComplexF64, nh, length(b.states)))
+            V = CuArray(randn(Xoshiro(1), ComplexF64, nh, NSITES))
+            f_red(z) = sum(real, sum(NQSAnsatze.logtwocosh, z; dims=1))
+            f_mm(M) = sum(real, M * xs)
+
+            for (label, f, arg) in (("logtwocosh reduction", f_red, u),
+                                    ("complex matmul", f_mm, V))
+                fw = timed("  $label, forward", () -> CUDA.@sync f(arg))
+                rv = timed("  $label, reverse",
+                           () -> CUDA.@sync Zygote.gradient(f, arg))
+                fw === nothing || rv === nothing ||
+                    @printf("  %-46s %11.1fx\n", "    reverse / forward", rv / fw)
+            end
+        catch err
+            println("      the split measurement failed: ",
+                    first(split(sprint(showerror, err), '\n')))
+        end
+
+        timed("  flatten_parameters and restore, no AD", () -> CUDA.@sync begin
+            flat, restore = NQSCore.flatten_parameters(θ_gpu)
+            restore(flat)
+        end)
+    end
+
     # ===================================================== the host/device boundary itself
 
     # This section measured the case for the device kernel, and now measures what it removed:

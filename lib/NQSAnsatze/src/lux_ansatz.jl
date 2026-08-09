@@ -71,10 +71,10 @@ _input_type(θ) = Float64
 _input_type(θ::NamedTuple) = isempty(θ) ? Float64 : _input_type(first(values(θ)))
 _input_type(θ::AbstractArray) = real(eltype(θ))
 
-"""Any array among the parameters, whose type says where the network expects to be run."""
-_reference_array(θ) = nothing
-_reference_array(θ::NamedTuple) = isempty(θ) ? nothing : _reference_array(first(values(θ)))
-_reference_array(θ::AbstractArray) = θ
+# Any array among the parameters, whose type says where the network expects to be run. Shared
+# with `NQSCore`, which asks the same question of the same object to decide where to unpack a
+# batch — two answers to "where does this ansatz run" would be one answer too many.
+using NQSCore: _reference_array
 
 """
     colocate(reference, input)

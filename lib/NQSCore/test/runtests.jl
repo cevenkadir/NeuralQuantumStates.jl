@@ -679,6 +679,24 @@ end
             @test E_device ≈ local_energy(vs, H, b.states)
         end
 
+        @testset "the samples are unpacked where the parameters are" begin
+            # The batch is an input to the ansatz, so it belongs wherever the ansatz runs, and
+            # the parameters are the only thing in a variational state that a caller
+            # deliberately placed somewhere.
+            @test NQSCore._reference_array(parameters(vs)) === parameters(vs)
+            @test NQSCore._reference_array((W=zeros(2, 2), b=zeros(2))) == zeros(2, 2)
+            @test NQSCore._reference_array(NamedTuple()) === nothing
+            @test NQSCore._reference_array(1.0) === nothing
+
+            # Host parameters keep the host unpacking, exact rationals and all.
+            @test NQSCore.configurations_of(vs, b.states) ==
+                  configurations(spec, b.states, nsites)
+
+            device_x = NQSCore._configurations(vs, b.states, parameters(vs), CPU())
+            @test eltype(device_x) === Float64
+            @test device_x == Float64.(configurations(spec, b.states, nsites))
+        end
+
         @testset "an operator already on the backend is not moved again" begin
             # The loop-friendly form: upload once, reuse. It has to give the same answer as
             # handing over the unflattened operator, or the optimization is paying for a

@@ -75,6 +75,26 @@ _device_operator(op, backend) = ConnectedBasisConfigurations.to_backend(
     ConnectedBasisConfigurations.flatten(op), backend
 )
 
+"""The table of local values, in the element type the network works in, resident on `backend`."""
+_local_value_table(::Type{T}, spec, backend) where {T} =
+    _resident(backend, collect(T, ConnectedBasisConfigurations.local_values(spec)))
+
+function NQSCore._configurations(
+    vs::NQSCore.AbstractVariationalState, states::AbstractVector,
+    reference::AbstractArray, backend,
+)
+    a = NQSCore.ansatz(vs)
+    nsites = NQSCore.n_sites(a)
+    T = real(eltype(reference))
+
+    values = _local_value_table(T, NQSCore.dof(a), backend)
+    x = KernelAbstractions.allocate(backend, T, nsites, length(states))
+    ConnectedBasisConfigurations.configurations!(
+        x, values, _resident(backend, states), nsites, backend
+    )
+    return x
+end
+
 function NQSCore._connections(
     vs::NQSCore.AbstractVariationalState, operator, states::AbstractVector,
     like::AbstractArray, backend,
@@ -104,9 +124,7 @@ function NQSCore._connections(
     # column of the forward pass each; they contribute exactly zero, because a padded slot is
     # the sample itself with a zero matrix element.
     T = real(eltype(like))
-    values = _resident(backend, collect(T, ConnectedBasisConfigurations.local_values(
-        NQSCore.dof(a)
-    )))
+    values = _local_value_table(T, NQSCore.dof(a), backend)
     x = KernelAbstractions.allocate(backend, T, nsites, height * n)
     ConnectedBasisConfigurations.configurations!(x, values, configs, nsites, backend)
 

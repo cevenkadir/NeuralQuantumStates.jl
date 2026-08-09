@@ -23,11 +23,44 @@ This is the boundary between the two representations: packed integers are what t
 kernel and the samplers work in, numeric arrays are what an ansatz consumes. Entry points that
 need both the configurations and their log-amplitudes build this once and pass it along, rather
 than rebuilding it for each consumer.
+
+Where it is built follows the *parameters*, not the samples: the array this returns is an input
+to the ansatz, and an ansatz runs where its parameters are. On a host that is the loop over
+digits below. On a device — with KernelAbstractions loaded — it is the same kernel the connected
+configurations go through, which matters more than its size suggests, because this array is
+consumed twice: once for `log ψ` and once inside the differentiated loss, where a host-to-device
+conversion would sit in the middle of an automatic-differentiation pass.
 """
 function configurations_of(vs::AbstractVariationalState, states::AbstractArray)
-    a = ansatz(vs)
-    return ConnectedBasisConfigurations.configurations(dof(a), vec(states), n_sites(a))
+    flat = vec(states)
+    reference = _reference_array(parameters(vs))
+    reference isa AbstractArray || return _host_configurations(vs, flat)
+    return _configurations(vs, flat, reference, _device_backend(reference))
 end
+
+_host_configurations(vs::AbstractVariationalState, states::AbstractVector) =
+    ConnectedBasisConfigurations.configurations(
+        dof(ansatz(vs)), states, n_sites(ansatz(vs))
+    )
+
+_configurations(vs::AbstractVariationalState, states::AbstractVector, ::AbstractArray, ::Nothing) =
+    _host_configurations(vs, states)
+
+"""
+    NQSCore._reference_array(parameters) -> AbstractArray or nothing
+
+Any array among the parameters, whose type says where the ansatz expects to be run.
+
+Parameters are the only thing in a variational state that a caller deliberately places
+somewhere. The samples are packed integers with no opinion, and the ansatz is a functional form
+with none either, so asking the parameters is how anything here learns which memory it is
+working in — without a device field to keep in sync, and without naming a GPU package.
+
+`nothing` when there is no array to ask, which is a perfectly ordinary answer: it means the host.
+"""
+_reference_array(θ) = nothing
+_reference_array(θ::NamedTuple) = isempty(θ) ? nothing : _reference_array(first(values(θ)))
+_reference_array(θ::AbstractArray) = θ
 
 """
     log_amplitudes(state, packed_states) -> Vector
