@@ -81,9 +81,8 @@ square matrix to keep on the device in the first place.
 
 !!! note "What has actually been run"
     A full variational step — forward pass, local energies, gradient, and a matrix-free solve —
-    has been measured on an NVIDIA Quadro GV100, agreeing with the host result to a relative
-    `6.6e-16`. `mode=:matrixfree` with `ConjugateGradientSolver` is the combination that was
-    exercised.
+    has been run on an NVIDIA GPU, agreeing with the host result to a relative `6.6e-16`.
+    `mode=:matrixfree` with `ConjugateGradientSolver` is the combination that was exercised.
 
     Two paths in the extension have **not** been: `CholeskySolver`'s indefinite fallback, which
     only triggers when the shift fails to cover the tensor's zero modes, and the

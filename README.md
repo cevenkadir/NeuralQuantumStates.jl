@@ -119,7 +119,7 @@ kernel. See the
 
 ### Further goals
 - [ ] Support for distributed and parallel computing via [MPI.jl](https://github.com/JuliaParallel/MPI.jl/tree/master).
-- [ ] GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl). CUDA works for the Lux ansatz path: a full variational step on a Quadro GV100 matches the host answer to a relative `6.6e-16`, at 55× on the forward pass and 25× on `expect_and_grad`, measured by `lib/NQSCore/benchmark/gpu`. Still open — the Metropolis samplers, the `Jastrow` and `SymmetricRBM` layers, and AMDGPU. Metal is ruled out: Apple GPUs have no Float64 and no complex linear solve, and this stack is `ComplexF64` throughout.
+- [ ] GPU support via [CUDA.jl](https://github.com/JuliaGPU/CUDA.jl), [AMDGPU.jl](https://github.com/JuliaGPU/AMDGPU.jl), and [Metal.jl](https://github.com/JuliaGPU/Metal.jl). CUDA works for the Lux ansatz path: a full variational step on an NVIDIA GPU matches the host answer to a relative `6.6e-16`, with the speedups measured by `lib/NQSCore/benchmark/gpu`. Still open — the Metropolis samplers, the `Jastrow` and `SymmetricRBM` layers, and AMDGPU. Metal is ruled out: Apple GPUs have no Float64 and no complex linear solve, and this stack is `ComplexF64` throughout.
 
 ## License
 

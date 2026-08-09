@@ -92,10 +92,8 @@ expect(vs, H)
 
 With `KernelAbstractions` loaded, the connected configurations are computed on the device too,
 by the kernel in `ConnectedBasisConfigurations` — the samples go up as packed integers, eight
-bytes each, and the array `max_conn` times larger never crosses the bus at all. On a Quadro
-GV100 with twelve sites, 4096 configurations and an `RBM(12, 4)`, that host work and its
-transfer were two thirds of a device `expect`: 5.897 ms against the host's 231.6 ms. Without
-them the same `expect` is **1.753 ms**, or 132×, and `expect_and_grad` 44×.
+bytes each, and the array `max_conn` times larger never crosses the bus at all. Without it that
+host work and its transfer are most of a device `expect`.
 
 The samples are unpacked there too, and where that happens follows the *parameters* rather than
 the samples: the batch is an input to the ansatz, and an ansatz runs where its parameters are.
@@ -117,6 +115,5 @@ H_dev = to_backend(flatten(H), CUDABackend())    # once
 expect(vs, H_dev)                                # per step
 ```
 
-It is worth about what it looks like: 1.726 ms against 1.753 ms on the run above, 1.5%. Seven
-small transfers do not amount to much beside a millisecond of network. Do it because it is one
-line, not because a run depends on it.
+Seven small transfers do not amount to much beside the network, so do it because it is one line,
+not because a run depends on it.
