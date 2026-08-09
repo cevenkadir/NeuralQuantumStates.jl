@@ -86,15 +86,32 @@ matrix multiplication mixes host and device memory. Inferring it from the parame
 storing a device in the ansatz means there is no new field, no new dependency and nothing to
 keep in sync — and on the CPU it does nothing at all.
 
-Whether the reference is in host memory is decided by unwrapping it rather than by testing for
+Whether either side is in host memory is decided by unwrapping it rather than by testing for
 `Array` directly. Parameters do not always arrive as plain arrays even on the CPU: rebuilding
 them from a flat vector, which is exactly what differentiating through
 `NQSCore.flatten_parameters` does, hands back views into a `ComponentArray`. Treating one of
 those as foreign would copy it, and a copy is a mutation that reverse-mode AD refuses to
 differentiate through.
+
+The question asked is whether the two are on the *same side* of that boundary, not whether the
+reference is on the host — so a batch that is already on a device, which is what a device-side
+connected-configuration kernel produces, is left where it is rather than copied to a fresh
+allocation beside itself.
 """
 colocate(reference, input::AbstractArray) =
-    _is_host(reference) ? input : copyto!(similar(reference, eltype(input), size(input)), input)
+    _is_host(reference) == _is_host(input) ? input :
+    copyto!(similar(reference, eltype(input), size(input)), input)
+
+"""
+The batch as the network's element type, without a copy when it is already that type.
+
+Configurations normally arrive as exact rationals, which no network and no accelerator wants,
+so the conversion has to happen. It does not always: a device-side connected-configuration
+kernel writes the float straight out, and re-broadcasting it would be a full-size allocation
+on the more expensive memory for no change at all.
+"""
+_as_input(::Type{T}, x::AbstractArray{T}) where {T} = x
+_as_input(::Type{T}, x::AbstractArray) where {T} = T.(x)
 
 # Moving a batch to a device is a `copyto!`, and reverse-mode AD refuses to differentiate a
 # mutation. It does not have to: `input` is the configurations, which are data rather than
@@ -112,11 +129,11 @@ end
 _is_host(_) = true
 
 function NQSCore.log_amplitude(a::LuxAnsatz, θ, x::AbstractMatrix)
-    # Configurations arrive as exact rationals, which no network and no accelerator wants, so
-    # the conversion to a float type has to happen anyway; doing the transfer in the same step
-    # keeps the host/device boundary to this one line.
+    # Conversion and transfer in one line, so the host/device boundary is in one place — and
+    # both are skipped when the batch is already the right type in the right memory, which is
+    # what a device-side connected-configuration kernel hands over.
     T = _input_type(θ)
-    input = colocate(_reference_array(θ), T.(x))
+    input = colocate(_reference_array(θ), _as_input(T, x))
     y, _ = Lux.apply(a.model, input, θ, a.states)
     return _as_log_amplitude(y)
 end
