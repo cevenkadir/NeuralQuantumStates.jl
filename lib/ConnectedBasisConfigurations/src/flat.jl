@@ -245,3 +245,18 @@ function connected_padded(op::FlatOperator{T}, states::AbstractArray{S}) where {
         flat_counts, max_conn, size(states)
     )
 end
+
+"""
+    to_backend(operator, backend) -> FlatOperator
+
+Move a flat operator onto a KernelAbstractions backend.
+
+Defined by the extension that KernelAbstractions activates; without it there is no backend to
+move to, and this says so rather than failing later and less clearly.
+"""
+function to_backend(::FlatOperator, backend)
+    throw(ArgumentError(
+        "moving an operator to $backend needs KernelAbstractions loaded; `using " *
+        "KernelAbstractions` activates the kernel and this alongside it"
+    ))
+end

@@ -34,6 +34,7 @@ using CUDA
 using ConnectedBasisConfigurations
 using cuDNN                    # Lux needs it alongside CUDA, or gpu_device() silently returns a CPU
 using DifferentiationInterface
+using KernelAbstractions
 using LinearAlgebra
 using Functors: fmap
 using Lux
@@ -254,6 +255,59 @@ let spec = Spin(1 // 2), nsites = NSITES
       A ratio near 1 means a device-side connected-configuration kernel would waste nothing;
       well above 1 means most of the transfer above, and most of what such a kernel would
       evaluate, is padding.""")
+end
+
+# ======================================== connected configurations, host versus device kernel
+
+# The measurement this whole exercise was for. Computing connections on the host costs the
+# kernel plus the transfer of its results; computing them on the device costs a kernel launch
+# and nothing else. The comparison is only meaningful if the two agree, so that is checked
+# first and the timings are skipped if they do not.
+println("\nconnected configurations")
+
+let spec = Spin(1 // 2), nsites = NSITES
+    b = basis(dof_object(spec), nsites)
+    states = b.states
+    H = tfi(nsites; h_x=0.9, h_z=0.1)
+    flat = flatten(H)
+    h, n = max_conn_size(flat), length(states)
+
+    host_c = Matrix{eltype(states)}(undef, h, n)
+    host_m = Matrix{Float64}(undef, h, n)
+    host_k = Vector{Int}(undef, n)
+    connected_padded!(host_c, host_m, host_k, flat, states)
+
+    ok = false
+    dev_flat = nothing
+    dev_states = dev_c = dev_m = dev_k = nothing
+    try
+        backend = CUDABackend()
+        dev_flat = to_backend(flat, backend)
+        dev_states = CuArray(states)
+        dev_c = CUDA.similar(dev_states, h, n)
+        dev_m = CuArray{Float64}(undef, h, n)
+        dev_k = CuArray{Int}(undef, n)
+        connected_padded!(dev_c, dev_m, dev_k, dev_flat, dev_states, backend)
+        ok = Array(dev_k) == host_k && Array(dev_c) == host_c && Array(dev_m) == host_m
+        println("  device kernel matches the host kernel: ", ok)
+    catch err
+        println("  device kernel FAILED: ", first(split(sprint(showerror, err), '\n')))
+    end
+
+    t_host = timed("connections on host (kernel only)",
+                   () -> connected_padded!(host_c, host_m, host_k, flat, states))
+    t_move = timed("...plus moving the results to the device",
+                   () -> CUDA.@sync (CuArray(Float64.(configurations(spec, vec(host_c), nsites)));
+                                     CuArray(host_m)))
+    if ok
+        t_dev = timed("connections on device",
+                      () -> CUDA.@sync connected_padded!(
+                          dev_c, dev_m, dev_k, dev_flat, dev_states, CUDABackend()))
+        if t_host !== nothing && t_move !== nothing && t_dev !== nothing
+            compare("against host kernel alone", t_host, t_dev)
+            compare("against host kernel plus transfer", t_host + t_move, t_dev)
+        end
+    end
 end
 
 # ====================================================== sampling, which is the real loop

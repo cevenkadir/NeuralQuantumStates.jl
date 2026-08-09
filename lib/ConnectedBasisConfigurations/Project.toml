@@ -8,15 +8,23 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
 SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
 
+[weakdeps]
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+
+[extensions]
+ConnectedBasisConfigurationsKernelAbstractionsExt = "KernelAbstractions"
+
 [compat]
+KernelAbstractions = "0.9"
 LinearAlgebra = "1"
 OperatorAlgebra = "0.3.3"
 SymBasis = "0.2.1"
 julia = "1.11"
 
 [extras]
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["SparseArrays", "Test"]
+test = ["KernelAbstractions", "SparseArrays", "Test"]
