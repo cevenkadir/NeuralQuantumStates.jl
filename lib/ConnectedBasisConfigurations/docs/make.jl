@@ -44,6 +44,7 @@ makedocs(;
             "The kernel" => "api/connected.md",
             "Compiling operators" => "api/compile.md",
             "Configurations and local operators" => "api/configurations.md",
+            "Running on a device" => "api/device.md",
             "Backend interface" => "api/interface.md",
         ],
     ],

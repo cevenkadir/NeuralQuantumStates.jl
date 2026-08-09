@@ -23,7 +23,7 @@ the generic functions in `interface.jl`, and another library plugs in by adding 
 - [`connected_padded!`](@ref) — the same, into buffers the caller owns
 - [`connected`](@ref) — a single configuration, as a `Dict`
 - [`configurations`](@ref) / [`packed`](@ref) — convert between packed `BaseInt` states and
-  arrays of physical local values
+  arrays of physical local values, and [`configurations!`](@ref) for the same on a device
 - [`local_operators`](@ref) — single-site matrices in SymBasis's digit ordering
 
 # Conventions
@@ -84,7 +84,7 @@ include("flat.jl")
 export compile, CompiledOperator, CompiledSector, max_conn_size
 export flatten, FlatOperator, to_backend
 export connected, connected_padded, connected_padded!
-export configurations, packed
+export configurations, configurations!, packed
 export local_operators, local_values, local_dimension
 export expand_terms, amplitude_type, read_digit, write_digit
 export fold_state, state_lookup, lookup_index, orbit_norms

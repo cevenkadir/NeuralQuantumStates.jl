@@ -12,6 +12,12 @@ The work is embarrassingly parallel over samples — one thread owns one column 
 touches nothing else — but each thread needs somewhere to expand a term into. That scratch is
 allocated once, per sample rather than per thread, and passed in.
 
+A second, much smaller kernel unpacks the packed states into the numeric array a network
+consumes ([`ConnectedBasisConfigurations.configurations!`](@ref)). The two belong together
+because they are the pair that keeps a batch on the device from end to end: computing the
+connections there and then unpacking them on the host would put the larger of the two arrays
+back on the wire.
+
 # Measured
 
 A transverse-field Ising chain of twelve sites, 4096 configurations, on a Quadro GV100: the host
@@ -175,6 +181,37 @@ end
             mels[j, b] = zero(T)
         end
     end
+end
+
+# ------------------------------------------------------------------------- unpacking states
+
+"""
+Write the physical local value of every digit of every state into a `(nsites, batch)` array.
+
+One thread owns one entry, which is the whole of the parallelism here: no thread reads what
+another writes, and the digit extraction is a shift and a mask. `values` is the `d`-element
+table of local values, resident on the same backend, so the kernel indexes it rather than
+knowing anything about degrees of freedom.
+"""
+@kernel function configurations_kernel!(out, @Const(values), @Const(states))
+    i, b = @index(Global, NTuple)
+    @inbounds out[i, b] = values[unchecked_read(states[b], i)+1]
+end
+
+function ConnectedBasisConfigurations.configurations!(
+    out::AbstractMatrix{T}, values::AbstractVector{T}, states::AbstractArray,
+    nsites::Integer, backend,
+) where {T}
+    n = length(states)
+    size(out) == (nsites, n) || throw(DimensionMismatch(
+        "out is $(size(out)); for $n states of $nsites sites it must be $((Int(nsites), n))"
+    ))
+    n == 0 && return out
+
+    kernel = configurations_kernel!(backend)
+    kernel(out, values, reshape(states, n); ndrange=(Int(nsites), n))
+    KernelAbstractions.synchronize(backend)
+    return out
 end
 
 # ---------------------------------------------------------------------------- entry points

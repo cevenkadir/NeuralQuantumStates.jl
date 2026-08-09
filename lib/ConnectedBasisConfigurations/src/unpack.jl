@@ -52,6 +52,33 @@ function configurations(spec, states::AbstractMatrix{S}, nsites::Integer) where 
 end
 
 """
+    configurations!(out, values, states, nsites, backend) -> out
+
+Unpack packed configurations into `out` on a KernelAbstractions backend.
+
+Defined by the extension that KernelAbstractions activates; without it there is no backend to
+run on, and this says so rather than failing later and less clearly.
+
+Three things differ from [`configurations`](@ref), and each is there because a device demands
+it:
+
+- **`values` is passed in rather than taken from a specification.** It is
+  `collect(T, local_values(spec))` already resident on `backend` — a `d`-element vector the
+  kernel indexes with the digit it reads. A specification is a host object with no place in
+  device code.
+- **The element type is whatever `out` and `values` are made of, and it is a float.**
+  `configurations` returns `eltype(local_values(spec))`, which is `Rational{Int64}` for a spin;
+  rationals cannot live on a GPU at all, so the host path converts afterwards and pays a second
+  full-size array for it. Writing the float directly removes both.
+- **`out` is the caller's.** It is `(nsites, length(states))`, and the caller usually already
+  has it as part of a larger device allocation.
+
+`states` may have any shape; it is read in linear order, so `out`'s columns follow
+`vec(states)`.
+"""
+function configurations! end
+
+"""
     packed(spec, configuration) -> BaseInt
 
 Inverse of [`configurations`](@ref) for a single configuration: pack a vector of physical local

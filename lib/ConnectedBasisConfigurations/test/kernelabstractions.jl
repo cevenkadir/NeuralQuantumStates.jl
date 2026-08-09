@@ -105,6 +105,57 @@ using KernelAbstractions
         @test isempty(res.counts)
     end
 
+    @testset "the unpacking kernel" begin
+        # `configurations!` is the second half of keeping a batch on the device: the connected
+        # configurations are computed there, and this turns them into the network's input
+        # without them ever coming back. It must agree with the host `configurations` — the
+        # only intended difference being the element type, since the host returns exact
+        # rationals for a spin and no accelerator can hold one.
+        @testset "$spec matches the host unpacking" for spec in
+                                                        (Spin(1 // 2), Spin(1 // 1), Boson(3))
+            nsites = 4
+            states = basis(dof_object(spec), nsites).states
+            values = collect(Float64, local_values(spec))
+
+            out = Matrix{Float64}(undef, nsites, length(states))
+            configurations!(out, values, states, nsites, backend)
+            @test out == Float64.(configurations(spec, states, nsites))
+        end
+
+        @testset "states of any shape are read in linear order" begin
+            # The caller is the local-energy path, whose states are the `(max_conn, batch)`
+            # block of connected configurations; its columns have to line up with `vec` of
+            # that block, not with some reshaping of it.
+            spec, nsites = Spin(1 // 2), 4
+            H = transverse_field_ising(nsites; J=1.0, h_x=0.7, h_z=0.2)
+            res = connected_padded(H, basis(dof_object(spec), nsites).states)
+            values = collect(Float64, local_values(spec))
+
+            out = Matrix{Float64}(undef, nsites, length(res.configs))
+            configurations!(out, values, res.configs, nsites, backend)
+            @test out == Float64.(configurations(spec, vec(res.configs), nsites))
+        end
+
+        @testset "a wrong-sized output is rejected before the kernel launches" begin
+            spec, nsites = Spin(1 // 2), 4
+            states = basis(dof_object(spec), nsites).states
+            values = collect(Float64, local_values(spec))
+            @test_throws DimensionMismatch configurations!(
+                Matrix{Float64}(undef, nsites + 1, length(states)),
+                values, states, nsites, backend)
+            @test_throws DimensionMismatch configurations!(
+                Matrix{Float64}(undef, nsites, length(states) - 1),
+                values, states, nsites, backend)
+        end
+
+        @testset "an empty batch is not an error" begin
+            spec = Spin(1 // 2)
+            empty = eltype(basis(dof_object(spec), 4).states)[]
+            out = Matrix{Float64}(undef, 4, 0)
+            @test configurations!(out, collect(Float64, local_values(spec)), empty, 4, backend) === out
+        end
+    end
+
     @testset "to_backend moves every array" begin
         op = flatten(transverse_field_ising(4; J=1.0, h_x=0.7, h_z=0.2))
         moved = to_backend(op, backend)
