@@ -1,0 +1,21 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+
+# CUDA is here on purpose, where ../reactant deliberately excludes it: Reactant needs CUDA.jl
+# loaded to lower a KernelAbstractions kernel at all, which is the whole subject of this probe.
+# The two allocators still compete, so cap XLA before running — see the README.
+#
+# Its own directory, rather than a second script in ../reactant, because that environment holds
+# the validated 15-18x measurement and adding CUDA to it would re-resolve it. Keeping the two
+# apart means the Ada-card gate over there tests one variable.
+
+[sources]
+ConnectedBasisConfigurations = {path = "../../../ConnectedBasisConfigurations"}
