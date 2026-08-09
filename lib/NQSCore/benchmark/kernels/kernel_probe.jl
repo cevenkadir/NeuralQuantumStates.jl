@@ -436,7 +436,9 @@ end
 
 println("""
 
-What this decides: the Reactant time against the CUDA.jl one. Within a small factor, carrying the
-kernel into Reactant is worth doing and the whole step can live in one compiled region. Far above,
-CUDA.jl keeps the GPU and Reactant stays a CPU story.
+What this decides: whether the kernel runs at all, and whether the answer is right. The ratio
+against CUDA.jl matters less than it looks — the kernel is 38.8 us of a 5.245 ms step, 1.5% of
+`local_energy`, so even several times slower is affordable. What the port buys is not a faster
+kernel but the 2.57 ms network forward over 53,248 connected configurations moving into XLA
+alongside it, where the gradient already went 7x.
 """)
