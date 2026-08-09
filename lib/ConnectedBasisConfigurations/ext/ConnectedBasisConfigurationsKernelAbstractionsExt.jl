@@ -174,7 +174,7 @@ end
 
 function ConnectedBasisConfigurations.connected_padded!(
     configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
-    op::FlatOperator{T}, states::AbstractArray{S}, backend::KernelAbstractions.Backend;
+    op::FlatOperator{T}, states::AbstractArray{S}, backend;
     workgroupsize::Integer=64,
 ) where {S,T}
     height = op.max_conn
@@ -218,9 +218,7 @@ Move a flat operator's arrays onto `backend`, so a kernel there can read them.
 This is the step [`FlatOperator`](@ref) exists to make possible: every field is a plain vector
 of numbers, so moving the operator is moving seven arrays and nothing else.
 """
-function ConnectedBasisConfigurations.to_backend(
-    op::FlatOperator{T}, backend::KernelAbstractions.Backend
-) where {T}
+function ConnectedBasisConfigurations.to_backend(op::FlatOperator{T}, backend) where {T}
     move(v) = copyto!(KernelAbstractions.allocate(backend, eltype(v), length(v)), v)
     return FlatOperator(
         op.n_diagonal, op.n_terms,

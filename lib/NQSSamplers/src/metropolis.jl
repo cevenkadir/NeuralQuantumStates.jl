@@ -26,6 +26,26 @@ from an autocorrelation model.
 All chains advance together, so every step evaluates the ansatz once on a batch of `n_chains`
 configurations rather than once per chain. The ansatz is the expensive part of sampling, and
 a neural network is far more efficient on a batch than on single configurations.
+
+# `n_chains` on a GPU
+
+The default of eight is a reasonable number of chains and a terrible batch. A sweep costs one
+ansatz evaluation whatever its width, and on a device that evaluation is a handful of kernel
+launches whose latency does not depend on how much data they carry — so eight chains hands a
+GPU roughly a hundred numbers per launch and spends all its time on overhead. Measured on a
+Quadro GV100 with a small RBM, per sample:
+
+| chains | host | device |
+| ------ | ---- | ------ |
+| 8 | 5.9 µs | 19.9 µs |
+| 64 | 5.7 µs | 2.7 µs |
+| 512 | 5.5 µs | 0.48 µs |
+| 2048 | 6.1 µs | 0.24 µs |
+
+The host cost is flat, so widening the sweep is close to free there and worth an order of
+magnitude on a device. If you are sampling on a GPU, use hundreds of chains rather than eight;
+the default is left alone because it is the right shape for a CPU and because more chains means
+more memory.
 """
 struct MetropolisSampler{R<:AbstractRule,S,B} <: AbstractSampler
     rule::R

@@ -277,6 +277,16 @@ let spec = Spin(1 // 2), nsites = NSITES
     host_k = Vector{Int}(undef, n)
     connected_padded!(host_c, host_m, host_k, flat, states)
 
+    # The kernel lives in an extension, so the first question is whether it is there at all.
+    # A missing extension and a broken kernel look alike from the error message otherwise.
+    let ext = Base.get_extension(
+            ConnectedBasisConfigurations, :ConnectedBasisConfigurationsKernelAbstractionsExt
+        )
+        println("  kernel extension loaded: ", ext !== nothing)
+        ext === nothing && println("      `using KernelAbstractions` should activate it; if it " *
+                                   "does not, the extension failed to precompile")
+    end
+
     ok = false
     dev_flat = nothing
     dev_states = dev_c = dev_m = dev_k = nothing
