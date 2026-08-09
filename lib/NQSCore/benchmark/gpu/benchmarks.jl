@@ -298,6 +298,37 @@ let spec = Spin(1 // 2), nsites = NSITES
         end
     end
 
+    # Is the sampler's problem its design, or its width? A sweep costs one ansatz evaluation
+    # however many chains it advances, and on a device that evaluation is a handful of kernel
+    # launches whose latency does not depend on how much data they carry. If that is what the
+    # per-step cost is made of, then widening the sweep should leave the per-step time almost
+    # unchanged while dividing the per-sample time by the chain count — and the fix is a
+    # configuration rather than a rewrite. If instead per-step time grows with the width, the
+    # cost is real work and only a device-resident chain would help.
+    println("\n  per sample, by sweep width")
+    @printf("  %-14s %14s %14s %10s\n", "chains", "host", "device", "speedup")
+    for nc in (8, 64, 512, 2048)
+        s = MetropolisSampler(LocalRule(), random_configurations(spec, nsites, nc, Xoshiro(1));
+            n_chains=nc, n_samples=10, burn_in=5)
+        drawn = 10 * nc
+        h = try
+            @belapsed NQSCore.sample($s, $a, $θ_cpu, Xoshiro(2))
+        catch
+            nothing
+        end
+        d = try
+            @belapsed CUDA.@sync NQSCore.sample($s, $a, $θ_gpu, Xoshiro(2))
+        catch
+            nothing
+        end
+        if h === nothing || d === nothing
+            @printf("  %-14d %14s %14s %10s\n", nc, "-", "-", "-")
+        else
+            @printf("  %-14d %11.3f ns %11.3f ns %9.1fx\n",
+                    nc, 1e9 * h / drawn, 1e9 * d / drawn, h / d)
+        end
+    end
+
     # For contrast: one batched draw, where the ansatz sees the whole basis at once and there
     # is exactly one transfer rather than one per step.
     exact = ExactSampler(b, n_chains * n_samples)
