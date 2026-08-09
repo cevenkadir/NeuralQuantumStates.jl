@@ -32,6 +32,7 @@ paths here have never executed on hardware and one broken step should not hide t
 
 using BenchmarkTools
 using CUDA
+using ChainRulesCore
 using ConnectedBasisConfigurations
 using cuDNN                    # Lux needs it alongside CUDA, or gpu_device() silently returns a CPU
 using DifferentiationInterface
@@ -118,6 +119,20 @@ function tfi(nsites; J=1.0, h_x=1.0, h_z=0.0)
     end
     return OpSum(terms)
 end
+
+"""
+A copy of `logtwocosh` carrying its derivative explicitly, so the cost of writing one into
+`NQSAnsatze` can be measured before it is written.
+
+`logtwocosh` is a handful of `exp`s, a `log`, an `abs` and a `real`, differentiated by walking
+through all of them — while `d/dz log(2 cosh z) = tanh z` exactly. The candidate fix is one line,
+`ChainRulesCore.@scalar_rule logtwocosh(z) tanh(z)`, and the only question is what it is worth.
+
+Deliberately a *copy*. Attaching the rule to `NQSAnsatze.logtwocosh` here would make every other
+measurement in this file quietly use it, so there would be nothing left to compare against.
+"""
+ruled_logtwocosh(z::Number) = NQSAnsatze.logtwocosh(z)
+ChainRulesCore.@scalar_rule ruled_logtwocosh(z) tanh(z)
 
 report(label, t) = @printf("  %-46s %12s\n", label, BenchmarkTools.prettytime(t * 1e9))
 
@@ -310,13 +325,39 @@ let spec = Spin(1 // 2), nsites = NSITES
             f_red(z) = sum(real, sum(NQSAnsatze.logtwocosh, z; dims=1))
             f_mm(M) = sum(real, M * xs_real)
 
+            reverses = Dict{String,Any}()
             for (label, f, arg) in (("logtwocosh reduction", f_red, u),
                                     ("complex matmul", f_mm, V))
                 fw = timed("  $label, forward", () -> CUDA.@sync f(arg))
                 rv = timed("  $label, reverse",
                            () -> CUDA.@sync Zygote.gradient(f, arg))
+                reverses[label] = rv
                 fw === nothing || rv === nothing ||
                     @printf("  %-46s %11.1fx\n", "    reverse / forward", rv / fw)
+            end
+
+            # The reduction is the largest single item left in the gradient — 380 us of a
+            # 763 us model reverse — and the only one with an obvious candidate fix. Zygote
+            # currently differentiates through `logtwocosh`'s body, which is two `exp`s, a
+            # `log`, an `abs` and a `real`, when the derivative is `tanh` and nothing else.
+            #
+            # Correctness first, and not as a formality: the complex convention is where a
+            # hand-written rule goes wrong, and a rule that is merely fast is worthless. The
+            # timing is skipped if the two gradients disagree.
+            f_ruled(z) = sum(real, sum(ruled_logtwocosh, z; dims=1))
+            g_auto = Zygote.gradient(f_red, u)[1]
+            g_rule = Zygote.gradient(f_ruled, u)[1]
+            agree = isapprox(g_auto, g_rule; rtol=1e-12)
+            println("  an explicit rule gives the same gradient: ", agree)
+            if agree
+                rr = timed("  reduction reverse, explicit rule",
+                           () -> CUDA.@sync Zygote.gradient(f_ruled, u))
+                compare("  writing the rule would be", reverses["logtwocosh reduction"], rr)
+            else
+                # Worth knowing how wrong, since a factor of `conj` looks like a small error
+                # and is a completely different gradient.
+                @printf("      largest disagreement: %.3e\n",
+                        maximum(abs, Array(g_auto) .- Array(g_rule)))
             end
         catch err
             println("      the split measurement failed: ",
