@@ -286,18 +286,15 @@ let spec = Spin(1 // 2), nsites = NSITES
                     100 * (le + eg) / g_gpu)
         end
 
-        # Which part of the reverse pass is it? Two candidates, and they are separable.
+        # The layer itself is not the problem. Measured on this device, the reverse of the
+        # `logtwocosh` reduction is 4.6x its forward and the complex matmul's is 2.9x — 529 us
+        # between them — and `flatten_parameters` with its `restore` costs 85 us standing
+        # still. That is 614 us against a 4.17 ms `energy_gradient`, so the cost is in neither,
+        # and guessing a third time is worse than bisecting.
         #
-        # The layer is a complex matmul followed by a reduction through `logtwocosh`.
-        # Zygote's fast broadcast path is real-only; for a complex array it builds one
-        # pullback closure per element, which costs nothing on a host — measured there, the
-        # whole model's reverse is 1.6x its forward and the reduction's is 1.4x — and cannot
-        # work that way on a device at all. If the reduction is what does not survive the
-        # move, an explicit rule for `logtwocosh` fixes it, since `d/dz log(2cosh z) = tanh z`.
-        #
-        # The other candidate is the parameter flattening. `energy_gradient` differentiates
-        # through `restore`, which rebuilds a `NamedTuple` from a `ComponentArray` on every
-        # primal evaluation, and `ComponentArrays` is not obliged to like device memory.
+        # These two stay as a standing check that the layer's reverse pass remains cheap: they
+        # are what would move if a Zygote or CUDA upgrade dropped the complex broadcast onto a
+        # slower path, and that would otherwise show up only as a slower run with no cause.
         println("\n  the two halves of the layer, and the flattening")
         nh = ALPHA * NSITES
         try
@@ -319,10 +316,56 @@ let spec = Spin(1 // 2), nsites = NSITES
                     first(split(sprint(showerror, err), '\n')))
         end
 
-        timed("  flatten_parameters and restore, no AD", () -> CUDA.@sync begin
+        # The bisection. `energy_gradient` is a ladder of four wrappers around the model, and
+        # each rung below removes exactly one of them, so a jump between two consecutive rungs
+        # names the wrapper responsible rather than suggesting one.
+        #
+        #   split      the real/imag reparameterization, `v[1:n] .+ im .* v[n+1:2n]`
+        #   restore    rebuilding a NamedTuple from a ComponentArray, differentiated
+        #   cotangent  `2 sum(real(conj(c) * psi))`
+        #   model      `log_amplitude` itself, whose forward is 109 us
+        println("\n  bisecting energy_gradient")
+        try
             flat, restore = NQSCore.flatten_parameters(θ_gpu)
-            restore(flat)
-        end)
+            n = length(flat)
+            c = NQSCore._gradient_cotangent(E, p)
+            split = vcat(real.(flat), imag.(flat))
+
+            function full(v)
+                q = @views v[1:n] .+ im .* v[(n+1):(2n)]
+                return NQSCore._gradient_loss(a, restore(q), xs, c)
+            end
+            no_split(q) = NQSCore._gradient_loss(a, restore(q), xs, c)
+            no_restore(θ) = NQSCore._gradient_loss(a, θ, xs, c)
+            model_only(θ) = sum(real, log_amplitude(a, θ, xs))
+
+            t_fwd = timed("  the whole closure, forward only", () -> CUDA.@sync full(split))
+            t_full = timed("  + split + restore + cotangent + model",
+                           () -> CUDA.@sync Zygote.gradient(full, split))
+            t_nosplit = timed("  - split", () -> CUDA.@sync Zygote.gradient(no_split, flat))
+            t_norestore = timed("  - split - restore",
+                                () -> CUDA.@sync Zygote.gradient(no_restore, θ_gpu))
+            t_model = timed("  - split - restore - cotangent",
+                            () -> CUDA.@sync Zygote.gradient(model_only, θ_gpu))
+
+            rungs = (("the real/imag split", t_full, t_nosplit),
+                     ("restore, differentiated", t_nosplit, t_norestore),
+                     ("the cotangent", t_norestore, t_model))
+            println("\n  what each rung costs")
+            for (label, upper, lower) in rungs
+                upper === nothing || lower === nothing ||
+                    @printf("  %-46s %12s\n", label,
+                            BenchmarkTools.prettytime((upper - lower) * 1e9))
+            end
+            t_model === nothing ||
+                @printf("  %-46s %12s\n", "the model's own reverse pass",
+                        BenchmarkTools.prettytime(t_model * 1e9))
+            t_fwd === nothing || t_full === nothing ||
+                @printf("  %-46s %11.1fx\n", "closure reverse / closure forward",
+                        t_full / t_fwd)
+        catch err
+            println("      the bisection failed: ", first(split(sprint(showerror, err), '\n')))
+        end
     end
 
     # ===================================================== the host/device boundary itself
