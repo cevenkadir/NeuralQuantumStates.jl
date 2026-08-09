@@ -38,18 +38,23 @@ log_amplitudes(vs::AbstractVariationalState, states::AbstractArray) =
     log_amplitude(ansatz(vs), parameters(vs), configurations_of(vs, states))
 
 """
-Put `mels` on the same device as `like`, leaving it alone when both are already in host memory.
+Put `mels` on the same device as `like`, moving nothing when it is already there.
 
-On the CPU nothing needs to happen: broadcasting a real matrix-element array against complex
-log-amplitudes promotes elementwise for free, and materializing a converted copy would be a
-full `(max_conn, batch)` allocation bought for nothing. When the log-amplitudes live on a device
-— because the ansatz put them there — the matrix elements have to follow, and `copyto!` into a
-`similar` of the log-amplitudes does that using nothing but Base, which is why the local-energy
-kernel needs no GPU dependency to be GPU-ready.
+Only one of the four combinations needs work: host matrix elements against device
+log-amplitudes, which is what the host connected-configuration kernel produces when the ansatz
+runs on a device. `copyto!` into a `similar` of the log-amplitudes does that using nothing but
+Base, which is why the local-energy kernel needs no GPU dependency to be GPU-ready.
+
+The other three are deliberately left alone. On the host, broadcasting a real matrix-element
+array against complex log-amplitudes promotes elementwise for free, and materializing a
+converted copy would be a full `(max_conn, batch)` allocation bought for nothing. When *both*
+are already on a device — which is what the device kernel gives — a copy would be the same
+allocation, paid on the more expensive memory.
 """
-_colocate(::Array, mels::AbstractArray) = mels
-_colocate(like::AbstractArray, mels::AbstractArray) =
+_colocate(::Array, mels::Array) = mels
+_colocate(like::AbstractArray, mels::Array) =
     copyto!(similar(like, eltype(mels), size(mels)), mels)
+_colocate(::AbstractArray, mels::AbstractArray) = mels
 
 """
     NQSCore.to_host(x) -> AbstractArray
@@ -87,6 +92,12 @@ layout the sampler's business.
 `compile`d operator skips recompiling it on every call, which is worth doing inside an
 optimization loop and irrelevant for a single large batch, where the connected-configuration
 kernel dominates.
+
+When the ansatz's parameters live on a device and KernelAbstractions is loaded, the connected
+configurations are computed there too — see [`connections`](@ref). The device path re-uploads
+the operator on every call unless it is already resident, so an optimization loop should hand
+over `to_backend(flatten(H), backend)` once and reuse it, exactly as it would `compile` on the
+host.
 """
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractArray)
     E = local_energy(vs, operator, vec(states))
@@ -109,19 +120,60 @@ recomputed behind each caller's back.
 function _local_energy(
     vs::AbstractVariationalState, operator, states::AbstractVector, logψ_s::AbstractVector
 )
-    res = ConnectedBasisConfigurations.connected_padded(operator, states)
+    x, mels = connections(vs, operator, states, logψ_s)
 
     # One batched evaluation over every connected configuration of every sample, rather than
     # one call per sample: the ansatz is the expensive part, so it is called once.
-    logψ_sp = reshape(log_amplitudes(vs, vec(res.configs)), size(res.configs))
+    logψ_sp = reshape(log_amplitude(ansatz(vs), parameters(vs), x), size(mels))
 
     # A whole-column reduction rather than a loop bounded by each sample's connection count.
     # It needs no mask because the padding is already inert: a padded slot repeats the sample
     # itself with a zero matrix element, so it contributes `0 * exp(0) == 0` exactly — never
     # `0 * Inf`. Dropping the data-dependent trip count is also what makes this line run
     # unchanged on a GPU array.
-    mels = _colocate(logψ_sp, res.mels)
-    return vec(sum(mels .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
+    m = _colocate(logψ_sp, mels)
+    return vec(sum(m .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
+end
+
+"""
+    connections(state, operator, packed_states, like) -> (x, mels)
+
+The connected configurations of `operator`, as the ansatz wants them, and their matrix elements.
+
+`x` is the `(nsites, max_conn * batch)` numeric array [`log_amplitude`](@ref) consumes; `mels`
+is `(max_conn, batch)`, so `size(mels)` is the shape to reshape the log-amplitudes back into.
+
+This is the seam the device path attaches to, and it is a seam rather than a second copy of
+[`local_energy`](@ref) because only *these two arrays* differ between host and device. The
+reduction that follows is already written in terms that run unchanged on either, and
+duplicating it would mean two versions of the one line where the physics is.
+
+`like` says where the answer is wanted: it is the sample log-amplitudes, so it carries both the
+memory space the ansatz put itself in and the float type it works in. Passing an array rather
+than a device or an element type keeps `NQSCore` free of any notion of either — the host
+implementation below ignores it entirely, and what a device *is* is the business of the
+extension that KernelAbstractions activates.
+"""
+connections(vs::AbstractVariationalState, operator, states::AbstractVector, like) =
+    _connections(vs, operator, states, like, _device_backend(like))
+
+"""
+The KernelAbstractions backend `like` lives on, or `nothing` for host memory.
+
+Always `nothing` here, because without KernelAbstractions loaded there is no backend to name.
+The extension replaces this with the real question, and still answers `nothing` for an `Array`:
+loading KernelAbstractions must not silently divert host runs onto its CPU backend, which would
+swap a tested serial kernel for a launch-per-batch one on the strength of an unrelated `using`.
+"""
+_device_backend(::Any) = nothing
+
+function _connections(
+    vs::AbstractVariationalState, operator, states::AbstractVector, ::AbstractArray, ::Nothing
+)
+    a = ansatz(vs)
+    res = ConnectedBasisConfigurations.connected_padded(operator, states)
+    x = ConnectedBasisConfigurations.configurations(dof(a), vec(res.configs), n_sites(a))
+    return x, res.mels
 end
 
 """

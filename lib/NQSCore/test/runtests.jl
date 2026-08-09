@@ -8,6 +8,7 @@ using Aqua
 using ConnectedBasisConfigurations
 using DifferentiationInterface
 using ForwardDiff
+using KernelAbstractions
 using LinearAlgebra
 using OperatorAlgebra
 using Random
@@ -98,9 +99,20 @@ end
             "Random", "Statistics",
         ])
 
+        # Weak dependencies are named too, but the assertion here is weaker on purpose: a
+        # weakdep costs a caller nothing until they load it, so the list may grow. What must
+        # not happen is one migrating into `[deps]`, and the exact set above is what stops that
+        # — `Pkg.develop` has silently made that move twice in this repository's history.
+        @test Set(keys(get(project, "weakdeps", Dict()))) == Set(["KernelAbstractions"])
+        @test Set(keys(get(project, "extensions", Dict()))) ==
+              Set(["NQSCoreKernelAbstractionsExt"])
+
         # Every dependency is pinned, which registration requires and which nothing else checks.
         compat = project["compat"]
         for name in keys(project["deps"])
+            @test haskey(compat, name)
+        end
+        for name in keys(get(project, "weakdeps", Dict()))
             @test haskey(compat, name)
         end
         @test haskey(compat, "julia")
@@ -604,6 +616,77 @@ end
             E = local_energy(tvs, Hc, b.states)
             @test eltype(E) <: Complex
             @test any(!iszero, E)
+        end
+    end
+
+    @testset "the device local-energy path" begin
+        # KernelAbstractions runs the same kernels on a CPU backend as on a GPU one, so the
+        # whole device path can be checked here — against the host path, on a real model,
+        # without any GPU present. What a device adds beyond this is the compiler and the
+        # memory, not the algorithm.
+        spec, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)
+        vs, a, b = full_sum(spec, nsites)
+        logψ = NQSCore.log_amplitudes(vs, b.states)
+
+        @test Base.get_extension(NQSCore, :NQSCoreKernelAbstractionsExt) !== nothing
+
+        @testset "loading KernelAbstractions does not divert a host run" begin
+            # `get_backend` would happily call an `Array` a `CPU()` backend. Acting on that
+            # would mean an unrelated `using` swapped the tested serial kernel for a
+            # launch-per-batch one, on a machine with nothing to launch onto.
+            @test NQSCore._device_backend(zeros(3)) === nothing
+            @test NQSCore._device_backend(zeros(ComplexF64, 3)) === nothing
+            @test NQSCore._device_backend(logψ) === nothing
+        end
+
+        host = NQSCore._connections(vs, H, b.states, logψ, nothing)
+        device = NQSCore._connections(vs, H, b.states, logψ, CPU())
+
+        @testset "the configurations are the same, as floats" begin
+            # The host unpacking returns `Rational{Int64}` for a spin, which cannot live on a
+            # GPU at all; the device kernel writes the float the network wants directly, which
+            # is the second full-size array this path exists to avoid.
+            @test eltype(host[1]) <: Rational
+            @test eltype(device[1]) === Float64
+
+            n = length(b.states)
+            h_host, h_dev = size(host[2], 1), size(device[2], 1)
+            @test h_dev >= h_host
+            @test size(device[1]) == (nsites, h_dev * n)
+
+            X_host = reshape(Float64.(host[1]), nsites, h_host, n)
+            X_dev = reshape(device[1], nsites, h_dev, n)
+            @test X_dev[:, 1:h_host, :] == X_host
+            @test device[2][1:h_host, :] == host[2]
+
+            # The device path keeps the operator's static bound rather than trimming to the
+            # largest count it saw, so it can have extra rows. They must be inert padding —
+            # the sample itself with a zero matrix element — or the reduction is wrong.
+            samples_x = Float64.(configurations(spec, b.states, nsites))
+            for j in (h_host+1):h_dev
+                @test all(iszero, device[2][j, :])
+                @test X_dev[:, j, :] == samples_x
+            end
+        end
+
+        @testset "the local energies are identical" begin
+            # A `view` is not an `Array`, so it takes the device branch, and KernelAbstractions
+            # resolves its backend through the parent — which is how the whole path, dispatch
+            # included, is reachable on a machine with no GPU.
+            @test NQSCore._device_backend(view(logψ, :)) == CPU()
+            E_device = NQSCore._local_energy(vs, H, b.states, view(logψ, :))
+            @test E_device ≈ local_energy(vs, H, b.states)
+        end
+
+        @testset "an operator already on the backend is not moved again" begin
+            # The loop-friendly form: upload once, reuse. It has to give the same answer as
+            # handing over the unflattened operator, or the optimization is paying for a
+            # transfer per step to avoid one.
+            resident = to_backend(flatten(H), CPU())
+            x, mels = NQSCore._connections(vs, resident, b.states, logψ, CPU())
+            @test x == device[1]
+            @test mels == device[2]
         end
     end
 

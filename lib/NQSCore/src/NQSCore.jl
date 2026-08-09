@@ -34,6 +34,12 @@ Automatic differentiation is reached through DifferentiationInterface.jl, so no 
 pass it as `backend`. `using NQSCore` pulls in no autodiff, no neural-network library and no GPU
 code, and its test suite asserts as much.
 
+Accelerators work the same way. Put the parameters on a device and the local energy follows them
+there, because the reduction is written in terms that run unchanged on any array type. Loading
+KernelAbstractions — a *weak* dependency — additionally moves the connected-configuration kernel
+onto the device, so the batch never crosses the bus. Neither is required, and neither is named
+in `[deps]`.
+
 # Example
 
 ```julia

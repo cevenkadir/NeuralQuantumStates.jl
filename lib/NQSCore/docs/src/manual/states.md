@@ -75,3 +75,37 @@ Samples may arrive as a `(steps, chains)` matrix, and [`local_energy`](@ref) kee
 spread *between* chain means, which assumes only that the chains are independent, and split-R̂
 compares them. Flattening happens inside the local-energy kernel rather than in the sampler,
 leaving the chain layout the sampler's business.
+
+## Running on a device
+
+Put the parameters on a device and everything downstream follows them. `NQSCore` never names a
+GPU package to do it: [`log_amplitude`](@ref) is the ansatz's business, and the local-energy
+reduction is written so that it runs unchanged on whatever array type comes back.
+
+```julia
+using CUDA, cuDNN, Functors, KernelAbstractions
+
+θ = fmap(CuArray, θ)                    # not gpu_device(), which demotes ComplexF64
+vs = FullSumState(a, θ; backend=AutoZygote(), basis=b)
+expect(vs, H)
+```
+
+With `KernelAbstractions` loaded, the connected configurations are computed on the device too,
+by the kernel in `ConnectedBasisConfigurations` — the samples go up as packed integers, eight
+bytes each, and the array `max_conn` times larger never crosses the bus at all. On a Quadro
+GV100 with twelve sites and 4096 configurations, that host work and its transfer were two thirds
+of a device `expect`.
+
+Without `KernelAbstractions` everything still works: the connections are computed on the host
+and moved, which is what the extra `_colocate` step in the kernel is for. Loading
+`KernelAbstractions` on a machine with no accelerator changes nothing either — an `Array` is
+deliberately not treated as a backend, because a portable kernel is not the way to beat a serial
+loop over a few thousand samples.
+
+The one thing worth doing by hand is the operator. The device path uploads it on every call
+unless it is already resident, so a loop should hoist that exactly as it hoists `compile`:
+
+```julia
+H_dev = to_backend(flatten(H), CUDABackend())    # once
+expect(vs, H_dev)                                # per step
+```
