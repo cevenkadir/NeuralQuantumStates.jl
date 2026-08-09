@@ -366,6 +366,53 @@ let spec = Spin(1 // 2), nsites = NSITES
         catch err
             println("      the bisection failed: ", first(split(sprint(showerror, err), '\n')))
         end
+
+        # The ladder above put 3.516 ms of a 4.167 ms gradient inside the model, and the two
+        # operations the model is made of measured 530 us between them in isolation. Composing
+        # them therefore costs about seven times what they cost apart, and only on a device:
+        # on a host the isolated pieces add up to the whole (3.41 ms and 1.83 ms against
+        # 5.85 ms). So the second ladder walks into the model the same way the first walked
+        # into `energy_gradient`.
+        println("\n  bisecting the model")
+        try
+            layer, st = a.model, a.states
+            lt = NQSAnsatze.logtwocosh
+            r_ansatz(θ) = sum(real, log_amplitude(a, θ, xs))
+            r_apply(θ) = sum(real, first(Lux.apply(layer, xs, θ, st)))
+            r_layer(θ) = sum(real, first(layer(xs, θ, st)))
+            r_body(θ) = sum(real, reshape(θ.visible, 1, :) * xs .+
+                                  sum(lt, θ.weight * xs .+ θ.hidden; dims=1))
+            r_hidden(θ) = sum(real, sum(lt, θ.weight * xs .+ θ.hidden; dims=1))
+            r_mm(θ) = sum(real, θ.weight * xs .+ θ.hidden)
+
+            for (label, f) in (("through LuxAnsatz", r_ansatz),
+                               ("through Lux.apply", r_apply),
+                               ("the layer, called directly", r_layer),
+                               ("the layer body, inlined", r_body),
+                               ("...without the visible term", r_hidden),
+                               ("...matmul and bias only", r_mm))
+                timed("  $label", () -> CUDA.@sync Zygote.gradient(f, θ_gpu))
+            end
+
+            # The one type question in the whole path. Parameters are `ComplexF64` and the
+            # batch is `Float64`, because `real(eltype(θ))` is what a configuration naturally
+            # is. cuBLAS has no mixed complex-real `gemm`, so such a product falls to a generic
+            # kernel — the same class of mistake as the `Adjoint` wrapper already commented in
+            # the layer, and invisible on a host where generic matmul is merely somewhat
+            # slower rather than dramatically so. If the complex-complex product below is much
+            # faster, the batch should be converted once rather than the matmul being paid on
+            # every forward and every reverse.
+            println("\n  does the matmul reach cuBLAS?")
+            xc = ComplexF64.(xs)
+            m_mixed = timed("  ComplexF64 weight x Float64 batch",
+                            () -> CUDA.@sync θ_gpu.weight * xs)
+            m_same = timed("  ComplexF64 weight x ComplexF64 batch",
+                           () -> CUDA.@sync θ_gpu.weight * xc)
+            compare("  converting the batch would be", m_mixed, m_same)
+        catch err
+            println("      the model bisection failed: ",
+                    first(split(sprint(showerror, err), '\n')))
+        end
     end
 
     # ===================================================== the host/device boundary itself
