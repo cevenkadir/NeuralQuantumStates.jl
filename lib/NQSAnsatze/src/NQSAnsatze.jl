@@ -46,7 +46,9 @@ using Lux
 using SymBasis
 
 using NQSCore
-using NQSCore: AbstractAnsatz
+# `_reference_array` is shared rather than reimplemented: `NQSCore` asks the same question of
+# the same object to decide where to unpack a batch.
+using NQSCore: AbstractAnsatz, _reference_array
 
 include("layers.jl")
 include("lux_ansatz.jl")
