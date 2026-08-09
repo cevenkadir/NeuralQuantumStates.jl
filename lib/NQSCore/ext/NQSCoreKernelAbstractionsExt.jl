@@ -4,13 +4,22 @@ ansatz already is, instead of on the host and then shipped.
 
 # Why this is worth an extension
 
-Measured on a Quadro GV100, twelve sites and 4096 configurations, a device `expect` cost
-5.897 ms and was made of the host connected-configuration kernel (1.217 ms), unpacking its
-output and moving it to the device (2.716 ms), and the network and reduction that were already
-running there (~1.96 ms). Two thirds of a "GPU" `expect` was host work and a transfer. This
-path removes both: the connections are computed on the device from packed states that are 8
-bytes each, and unpacked into the network's input array without ever being materialised as
-`Rational`s or crossing the bus.
+Measured on a Quadro GV100, twelve sites and 4096 configurations, an `RBM(12, 4)`. Before this
+path a device `expect` cost 5.897 ms and was made of the host connected-configuration kernel
+(1.217 ms), unpacking its output and moving it to the device (2.716 ms), and the network and
+reduction that were already running there. Two thirds of a "GPU" `expect` was host work and a
+transfer.
+
+With the connections computed on the device from packed states that are 8 bytes each, and
+unpacked into the network's input array without ever being materialised as `Rational`s or
+crossing the bus, the same `expect` costs **1.753 ms** — 132× the CPU's 231.6 ms, where it was
+39×. `expect_and_grad` went from 26× to 44×. The transfer this removed, 2.099 ms per step, is
+larger than the whole `expect` that is left. Agreement with the host is unchanged at a relative
+6.6e-16.
+
+The two kernels together take 70.6 µs of that 1.753 ms — 49.2 µs for the connections and
+21.4 µs to unpack them — against 1.240 ms and a further 1.331 ms on the host. What dominates
+now is the network, which is where the time ought to be.
 
 # What stays out of it
 

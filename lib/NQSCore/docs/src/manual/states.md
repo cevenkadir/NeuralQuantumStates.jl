@@ -93,8 +93,9 @@ expect(vs, H)
 With `KernelAbstractions` loaded, the connected configurations are computed on the device too,
 by the kernel in `ConnectedBasisConfigurations` — the samples go up as packed integers, eight
 bytes each, and the array `max_conn` times larger never crosses the bus at all. On a Quadro
-GV100 with twelve sites and 4096 configurations, that host work and its transfer were two thirds
-of a device `expect`.
+GV100 with twelve sites, 4096 configurations and an `RBM(12, 4)`, that host work and its
+transfer were two thirds of a device `expect`: 5.897 ms against the host's 231.6 ms. Without
+them the same `expect` is **1.753 ms**, or 132×, and `expect_and_grad` 44×.
 
 Without `KernelAbstractions` everything still works: the connections are computed on the host
 and moved, which is what the extra `_colocate` step in the kernel is for. Loading
@@ -102,10 +103,14 @@ and moved, which is what the extra `_colocate` step in the kernel is for. Loadin
 deliberately not treated as a backend, because a portable kernel is not the way to beat a serial
 loop over a few thousand samples.
 
-The one thing worth doing by hand is the operator. The device path uploads it on every call
-unless it is already resident, so a loop should hoist that exactly as it hoists `compile`:
+The operator is uploaded on every call unless it is already resident, so a loop can hoist that
+exactly as it hoists `compile`:
 
 ```julia
 H_dev = to_backend(flatten(H), CUDABackend())    # once
 expect(vs, H_dev)                                # per step
 ```
+
+It is worth about what it looks like: 1.726 ms against 1.753 ms on the run above, 1.5%. Seven
+small transfers do not amount to much beside a millisecond of network. Do it because it is one
+line, not because a run depends on it.

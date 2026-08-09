@@ -94,10 +94,10 @@ optimization loop and irrelevant for a single large batch, where the connected-c
 kernel dominates.
 
 When the ansatz's parameters live on a device and KernelAbstractions is loaded, the connected
-configurations are computed there too — see [`connections`](@ref). The device path re-uploads
-the operator on every call unless it is already resident, so an optimization loop should hand
-over `to_backend(flatten(H), backend)` once and reuse it, exactly as it would `compile` on the
-host.
+configurations are computed there too — see [`connections`](@ref). That path re-uploads the
+operator on every call unless it is already resident, so a loop can hand over
+`to_backend(flatten(H), backend)` once, exactly as it would `compile` on the host. Measured, it
+is worth 1.5%: seven small transfers are not much beside a millisecond of network.
 """
 function local_energy(vs::AbstractVariationalState, operator, states::AbstractArray)
     E = local_energy(vs, operator, vec(states))

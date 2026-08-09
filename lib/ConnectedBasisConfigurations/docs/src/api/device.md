@@ -43,9 +43,10 @@ x = CuArray{Float64}(undef, nsites, h * n)
 configurations!(x, values, configs, nsites, CUDABackend())
 ```
 
-Uploading the operator is seven transfers, so a variational loop should do it once and reuse the
+Uploading the operator is seven transfers, so a variational loop can do it once and reuse the
 result rather than flattening on every step — the device counterpart of hoisting
-[`compile`](@ref) out of the loop.
+[`compile`](@ref) out of the loop. Measured against a full `expect` on a Quadro GV100 it is
+worth about 1.5%, so treat it as tidiness rather than as a fix.
 
 !!! note "The device path keeps the full static bound"
     [`connected_padded`](@ref) on the host trims its output to the largest connection count it

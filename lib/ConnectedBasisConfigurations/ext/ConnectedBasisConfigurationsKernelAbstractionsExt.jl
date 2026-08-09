@@ -24,6 +24,10 @@ A transverse-field Ising chain of twelve sites, 4096 configurations, on a Quadro
 kernel takes 1.217 ms and moving its results to the device a further 2.716 ms, against 48.9 µs
 here. That is 24.9× against the host kernel alone and **80.4× against the host kernel plus the
 transfer it replaces**, with output identical to the host kernel's in every slot.
+
+Unpacking costs a further 21.4 µs on the device against 1.331 ms on the host, so the pair is
+54× the host path it replaces. Wired into `NQSCore.local_energy`, that took a device `expect`
+on the same model from 5.897 ms to 1.753 ms.
 """
 module ConnectedBasisConfigurationsKernelAbstractionsExt
 
