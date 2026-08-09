@@ -399,16 +399,37 @@ let spec = Spin(1 // 2), nsites = NSITES
             # is. cuBLAS has no mixed complex-real `gemm`, so such a product falls to a generic
             # kernel — the same class of mistake as the `Adjoint` wrapper already commented in
             # the layer, and invisible on a host where generic matmul is merely somewhat
-            # slower rather than dramatically so. If the complex-complex product below is much
-            # faster, the batch should be converted once rather than the matmul being paid on
-            # every forward and every reverse.
+            # slower rather than dramatically so.
+            #
+            # The *direction* is what makes it expensive, and it is worth being explicit about
+            # because measuring the wrong one says the opposite. The forward product is
+            # `(48x12)(12x4096)`: two and a half million outputs over a reduction of length 12,
+            # so a generic kernel has plenty to be parallel over and is no slower than cuBLAS.
+            # Its pullback is `(48x4096)(4096x12)`: 576 outputs over a reduction of length
+            # 4096, which a generic kernel runs on 576 threads that each loop four thousand
+            # times. Both are timed below, and only the second should differ.
             println("\n  does the matmul reach cuBLAS?")
             xc = ComplexF64.(xs)
-            m_mixed = timed("  ComplexF64 weight x Float64 batch",
-                            () -> CUDA.@sync θ_gpu.weight * xs)
-            m_same = timed("  ComplexF64 weight x ComplexF64 batch",
-                           () -> CUDA.@sync θ_gpu.weight * xc)
-            compare("  converting the batch would be", m_mixed, m_same)
+            Δ = CuArray(randn(Xoshiro(2), ComplexF64, nh, length(b.states)))
+
+            f_mixed = timed("  forward, ComplexF64 x Float64", () -> CUDA.@sync θ_gpu.weight * xs)
+            f_same = timed("  forward, ComplexF64 x ComplexF64", () -> CUDA.@sync θ_gpu.weight * xc)
+            compare("  converting the batch would be", f_mixed, f_same)
+
+            r_mixed = timed("  pullback, ComplexF64 x adjoint Float64",
+                            () -> CUDA.@sync Δ * xs')
+            r_same = timed("  pullback, ComplexF64 x adjoint ComplexF64",
+                           () -> CUDA.@sync Δ * xc')
+            compare("  converting the batch would be", r_mixed, r_same)
+
+            # And the same question asked end to end, which is the one that decides it: the
+            # whole layer differentiated against a complex batch, against the 3.5 ms it costs
+            # against a real one. If this is small, the fix is one line in `_input_type` —
+            # promote the batch once, on a small array, rather than forcing a promotion inside
+            # every BLAS call on both sides of the derivative.
+            r_layer_c(θ) = sum(real, first(layer(xc, θ, st)))
+            timed("  the layer differentiated, ComplexF64 batch",
+                  () -> CUDA.@sync Zygote.gradient(r_layer_c, θ_gpu))
         catch err
             println("      the model bisection failed: ",
                     first(split(sprint(showerror, err), '\n')))
