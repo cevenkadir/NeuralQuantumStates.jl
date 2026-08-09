@@ -3,10 +3,9 @@
 
 A Metropolis transition rule: how to propose a move from one configuration to another.
 
-Separating the rule from the Metropolis machinery is what NetKet does, and the reason is that
-the rule is where all the physics knowledge lives. Which moves are proposed determines whether
-the chain explores the relevant part of configuration space at all — and, critically, whether
-it stays inside a conserved-quantity sector.
+The rule is where the physics knowledge lives: which moves are proposed decides whether the
+chain explores the relevant part of configuration space, and whether it stays inside a
+conserved-quantity sector.
 
 # Interface
     propose(rule, state, dof, nsites, rng) -> (new_state, log_correction)
@@ -29,12 +28,11 @@ function propose end
 
 Change the value at a single randomly chosen site to a different randomly chosen local value.
 
-The workhorse rule for unconstrained systems. It is symmetric — every move has an equally
-likely reverse — so the proposal correction is zero.
+The workhorse rule for unconstrained systems, and symmetric, so the proposal correction is zero.
 
-It does **not** conserve particle number or magnetization. Using it inside a conserved sector
-proposes moves that leave the sector; those get rejected by the basis check, and the chain
-stalls. Use [`ExchangeRule`](@ref) there instead.
+It does **not** conserve particle number or magnetization: inside a conserved sector every
+proposal leaves the sector, is rejected by the basis check, and the chain stalls. Use
+[`ExchangeRule`](@ref) there.
 """
 struct LocalRule <: AbstractRule end
 
@@ -42,7 +40,7 @@ function propose(::LocalRule, s, dof, nsites::Integer, rng::AbstractRNG)
     B = local_dimension(dof)
     site = rand(rng, 1:nsites)
     current = Int(read(s, site))
-    # Pick uniformly among the other B-1 values, so the move is never a no-op.
+    # Uniform over the other B-1 values, so the move is never a no-op.
     d = rand(rng, 0:(B-2))
     d >= current && (d += 1)
     return write(s, site, d), 0.0
@@ -53,10 +51,8 @@ end
 
 Swap the values on two randomly chosen sites.
 
-Conserves any quantity that is a sum over sites — total magnetization, total particle number —
-because swapping leaves that sum untouched. This is the rule to use inside a symmetry sector,
-where [`LocalRule`](@ref) would propose nothing but rejections.
-
+Conserves any quantity that is a sum over sites — magnetization, particle number — so this is
+the rule for a symmetry sector, where [`LocalRule`](@ref) would propose nothing but rejections.
 Symmetric, so the proposal correction is zero.
 
 !!! note "It cannot leave its sector"
@@ -79,19 +75,15 @@ end
 
 Propose moves along the configurations the Hamiltonian actually connects to.
 
-The most physically informed rule available: it never proposes a move the Hamiltonian gives
-zero amplitude to, so it automatically respects whatever the Hamiltonian conserves without
-being told what that is. For a sparse Hamiltonian it explores far more efficiently than blind
-local moves.
+Never proposes a move the Hamiltonian gives zero amplitude to, so it respects whatever the
+Hamiltonian conserves without being told what that is, and for a sparse Hamiltonian explores far
+better than blind local moves.
 
-The price is that the proposal is **asymmetric** — `s` may have a different number of
-connections than `s'` — so the correction `log[n_conn(s) / n_conn(s')]` is non-zero and must be
-carried into the acceptance test. Dropping it silently biases the sampled distribution, which
-is exactly the kind of error that produces plausible-looking but wrong expectation values.
+The price is that the proposal is **asymmetric** — `s` and `s'` generally have different numbers
+of connections — so the correction `log[n_conn(s) / n_conn(s')]` is non-zero. Dropping it biases
+the sampled distribution while leaving everything else looking reasonable.
 
-The operator is compiled once, when the rule is constructed. Every Metropolis step queries it
-twice — forwards and backwards — so leaving that work in the step is the difference between
-flattening the Hamiltonian a handful of times and flattening it a few million.
+The operator is compiled when the rule is constructed, since every step queries it twice.
 """
 struct HamiltonianRule{O} <: AbstractRule
     operator::O
@@ -106,7 +98,7 @@ end
 
 function propose(rule::HamiltonianRule, s, dof, nsites::Integer, rng::AbstractRNG)
     forward = connected(rule.operator, s)
-    delete!(forward, s)                              # a move must go somewhere else
+    delete!(forward, s)
     isempty(forward) && return s, 0.0
 
     candidates = collect(keys(forward))

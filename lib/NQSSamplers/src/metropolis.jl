@@ -16,36 +16,19 @@ Metropolis–Hastings sampling of `|ψ(s)|²` over discrete configurations.
 # Why multiple chains
 
 Not for speed. Several chains started from different configurations give a convergence
-diagnostic that no single chain can: split-R̂ compares them, and a chain stuck in one region of
-configuration space is invisible from the inside. The error bar is also estimated from the
-spread between chain means, which assumes only that the chains are independent, rather than
-from an autocorrelation model.
+diagnostic no single chain can: split-R̂ compares them, and a chain stuck in one region is
+invisible from the inside. The error bar also comes from the spread between chain means, which
+assumes only that the chains are independent rather than relying on an autocorrelation model.
 
-# Batching
+All chains advance together, so a step evaluates the ansatz once on a batch of `n_chains`
+configurations rather than once per chain.
 
-All chains advance together, so every step evaluates the ansatz once on a batch of `n_chains`
-configurations rather than once per chain. The ansatz is the expensive part of sampling, and
-a neural network is far more efficient on a batch than on single configurations.
-
-# `n_chains` on a GPU
-
-The default of eight is a reasonable number of chains and a terrible batch. A sweep costs one
-ansatz evaluation whatever its width, and on a device that evaluation is a handful of kernel
-launches whose latency does not depend on how much data they carry — so eight chains hands a
-GPU roughly a hundred numbers per launch and spends all its time on overhead. Measured on a
-Quadro GV100 with a small RBM, per sample:
-
-| chains | host | device |
-| ------ | ---- | ------ |
-| 8 | 5.9 µs | 19.9 µs |
-| 64 | 5.7 µs | 2.7 µs |
-| 512 | 5.5 µs | 0.48 µs |
-| 2048 | 6.1 µs | 0.24 µs |
-
-The host cost is flat, so widening the sweep is close to free there and worth an order of
-magnitude on a device. If you are sampling on a GPU, use hundreds of chains rather than eight;
-the default is left alone because it is the right shape for a CPU and because more chains means
-more memory.
+!!! tip "On a GPU, use hundreds of chains"
+    A sweep costs one ansatz evaluation whatever its width, and on a device that is a handful of
+    kernel launches whose latency does not depend on how much data they carry. Eight chains
+    hands a GPU about a hundred numbers per launch and spends everything on overhead, while the
+    per-sample cost on a host is flat in the width. The default of eight is right for a CPU and
+    is left alone because more chains also means more memory.
 """
 struct MetropolisSampler{R<:AbstractRule,S,B} <: AbstractSampler
     rule::R
@@ -75,12 +58,9 @@ end
 """Log of `|ψ|²` for a batch of packed configurations."""
 function _log_prob(a::AbstractAnsatz, θ, states::AbstractVector)
     x = ConnectedBasisConfigurations.configurations(NQSCore.dof(a), states, NQSCore.n_sites(a))
-    # Brought to the host because the acceptance test below is scalar and sequential: it reads
-    # one chain's log-probability, compares, and maybe writes it back. That is a round trip per
-    # element against a device array, and an error on most of them. One transfer of `n_chains`
-    # numbers per step is the cheap version of the same thing -- though it is still a transfer
-    # per step, which is why a device-resident sampler would be a different design rather than
-    # a tuning of this one.
+    # To the host, because the acceptance test is scalar and sequential: against a device array
+    # it would be a round trip per element. One transfer of `n_chains` numbers per step is the
+    # cheap version of the same thing.
     return NQSCore.to_host(2 .* real.(log_amplitude(a, θ, x)))
 end
 
@@ -88,13 +68,8 @@ end
 _admissible(::Nothing, s) = true
 _admissible(basis, s) = s in basis.states
 
-"""
-The sampler state is the configuration each chain finished on.
-
-Handing it back resumes those chains rather than restarting them, which also means the burn-in
-is skipped: the chains are already where burn-in would have taken them. Over an optimization run
-that turns the equilibration cost from something paid every step into something paid once.
-"""
+# The sampler state is the configuration each chain finished on. Handing it back resumes those
+# chains, which is also why the burn-in is skipped: they are already where it would take them.
 function NQSCore.sample(
     sampler::MetropolisSampler, a::AbstractAnsatz, θ, rng::AbstractRNG, state=nothing
 )
@@ -118,8 +93,7 @@ function NQSCore.sample(
     accepted = 0
     proposed = 0
 
-    # Hoisted out of the step loop: three allocations per Markov step is three allocations too
-    # many when the whole point of the loop is that a step is cheap.
+    # Hoisted out of the step loop; a Markov step should not allocate.
     proposals = similar(chains)
     corrections = zeros(Float64, sampler.n_chains)
     movable = falses(sampler.n_chains)
@@ -169,9 +143,9 @@ end
 
 Acceptance rate of the most recent [`MetropolisSampler`](@ref) run.
 
-A diagnostic, not part of the interface: a rate near zero means the chain is barely moving and
-the samples are effectively one configuration repeated, while a rate near one usually means the
-proposals are too timid to explore. Both produce error bars that look fine and mean nothing.
+A diagnostic, not part of the interface. Near zero means the chain is barely moving and the
+samples are one configuration repeated; near one usually means the proposals are too timid to
+explore. Both give error bars that look fine and mean nothing.
 """
 const ACCEPTANCE = Ref(0.0)
 
