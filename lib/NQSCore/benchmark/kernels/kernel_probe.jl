@@ -76,13 +76,13 @@ end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 2
 
-# Collect between samples, or the card fills. Every call here returns fresh `configs`, `mels` and
-# `counts` — about a megabyte together — and Julia's collector sees a `ConcretePJRTArray` as a
-# small host object with no idea of the device memory behind it, so it never feels the pressure.
-# `gcscrub` runs before each sample and outside the timed region, so this costs wall-clock and
-# leaves the minimum alone. The same setting had to be added to ../reactant, where the omission
-# filled a 24 GB card with 8049 copies of one 3 MiB gradient.
-BenchmarkTools.DEFAULT_PARAMETERS.gcsample = true
+# Every call here returns fresh `configs`, `mels` and `counts` — about a megabyte together — and
+# Julia's collector sees a `ConcretePJRTArray` as a small host object with no notion of the device
+# memory behind it, so an unbounded measurement fills the card. In ../reactant that took 8049
+# copies of one 3 MiB gradient to exhaust 24 GB. Fixing evals at one and capping samples bounds
+# the peak; `gcsample` would too, but a scrub before every sample bought four samples there and a
+# minimum over four is not a measurement.
+const SAMPLES = 500
 
 println()
 println("Reactant ", pkgversion(Reactant), "  |  CUDA ", pkgversion(CUDA),
@@ -366,7 +366,8 @@ let spec = Spin(1 // 2), nsites = NSITES
             note("matches the reference kernel, on CUDA", string(ok))
             t_cuda = @belapsed CUDA.@sync raw_connected(
                 $cu..., $(op.n_diagonal), $(op.n_terms), $height, $width, $base
-            )
+            ) evals = 1 samples = SAMPLES
+            GC.gc()
             report("connections on CUDA.jl", t_cuda)
         catch err
             failed("the CUDA.jl run", err)
@@ -414,7 +415,8 @@ let spec = Spin(1 // 2), nsites = NSITES
         ok = Array(r_k) == host_k && Array(r_c) == raw_host_c && Array(r_m) == host_m
         note("matches the reference kernel, on Reactant", string(ok))
 
-        t_reactant = @belapsed $thunk($args...)
+        t_reactant = @belapsed $thunk($args...) evals = 1 samples = SAMPLES
+        GC.gc()
         report("connections on Reactant", t_reactant)
         t_cuda === nothing ||
             @printf("  %-46s %11.2fx\n", "Reactant / CUDA.jl", t_reactant / t_cuda)

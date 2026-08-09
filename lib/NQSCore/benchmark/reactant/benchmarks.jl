@@ -94,15 +94,17 @@ end
 
 BenchmarkTools.DEFAULT_PARAMETERS.seconds = 2
 
-# Collect between samples. Julia's garbage collector sees a `ConcretePJRTArray` as a few hundred
-# bytes of host object and has no idea it is holding megabytes of XLA memory, so it feels no
-# pressure to run — while `@benchmark` discards a fresh result thousands of times. Left off, the
-# `logtwocosh` probe filled a 24 GB card with 8049 copies of its own 3 MiB gradient and the run
-# died inside the allocator.
+# How many calls a measurement is allowed to make, and it has to be bounded rather than left to
+# the clock. Julia's collector sees a `ConcretePJRTArray` as a few hundred bytes of host object
+# with no notion of the XLA memory behind it, so it feels no pressure while `@benchmark` discards
+# a fresh result thousands of times: the `logtwocosh` probe filled a 24 GB card with 8049 copies
+# of its own 3 MiB gradient and died inside the allocator.
 #
-# It costs wall-clock and nothing else: `gcscrub` runs *before* each sample, outside the timed
-# region, and the `seconds` budget bounds the whole loop either way — fewer samples, same minimum.
-BenchmarkTools.DEFAULT_PARAMETERS.gcsample = true
+# `gcsample` bounds it too, and was tried — but a full `gcscrub` before every sample is expensive
+# enough that the two-second budget bought four samples, and a minimum over four is not a
+# measurement. Fixing evals at one and capping samples bounds the peak at `SAMPLES` results
+# instead, freed by the collection `timed` runs when the measurement is over.
+const SAMPLES = 500
 
 # ------------------------------------------------------------------------------- reporting
 
@@ -121,7 +123,10 @@ report(label, t) = @printf("  %-46s %12s\n", label, BenchmarkTools.prettytime(t 
 """Time `f`, recording rather than raising when a path is not there."""
 function timed(label, f)
     try
-        trial = @benchmark $f()
+        trial = @benchmark $f() evals = 1 samples = SAMPLES
+        # Once the measurement is over, not between its samples: the results it discarded are
+        # unreachable now, and this is what actually returns their device memory.
+        GC.gc()
         t = minimum(trial).time / 1e9
         report(label, t)
         # A handful of evaluations is a compile time wearing a benchmark's clothes. Saying so is
