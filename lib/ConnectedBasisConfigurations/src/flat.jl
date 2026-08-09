@@ -4,23 +4,17 @@
 A [`CompiledOperator`](@ref) with its nesting removed: the same data, in a handful of
 rectangular arrays.
 
-`CompiledOperator` is a vector of terms, each a vector of factors, each holding three more
-vectors. That is the right shape for a CPU kernel and an impossible one for an accelerator —
-`isbits` is false, so it cannot be uploaded, and chasing three levels of pointers is exactly
-what a GPU is worst at. Flattening replaces the nesting with offsets:
+A `CompiledOperator` is a vector of terms of factors of vectors, which `isbits` cannot describe
+and so cannot be uploaded to a device. Flattening replaces the nesting with offsets:
 
 - terms `1:n_diagonal` are diagonal, the rest off-diagonal, so the kernel needs no predicate;
 - term `t` owns factors `term_start[t]:term_start[t+1]-1`;
 - factor `f` owns column pointers `factor_col_start[f]:factor_col_start[f+1]-1`, and those
-  pointers index `outs` and `vals` **absolutely**, so no second offset is needed inside the
-  innermost loop.
+  pointers index `outs` and `vals` **absolutely**, saving an addition in the innermost loop.
 
-Nothing is duplicated and nothing is padded; this is a change of layout, not of content. Every
-field is a plain vector of `Int32` or of the matrix-element type, which makes the whole thing
-`Adapt`-able to a device in one step.
-
-Build one with [`flatten`](@ref). [`connected_padded!`](@ref) accepts it wherever it accepts a
-`CompiledOperator`, and returns the same answer.
+Nothing is duplicated or padded; this is a change of layout, not of content. Build one with
+[`flatten`](@ref); [`connected_padded!`](@ref) accepts it wherever it accepts a
+`CompiledOperator` and returns the same answer.
 """
 struct FlatOperator{T,VI<:AbstractVector{Int32},VT<:AbstractVector{T}}
     n_diagonal::Int
@@ -49,7 +43,7 @@ Base.show(io::IO, ::MIME"text/plain", op::FlatOperator) = show(io, op)
 
 Rewrite a compiled operator into flat arrays. Compiles first if it has not been compiled.
 
-The diagonal terms are placed first so that a kernel can walk `1:n_diagonal` and then
+Diagonal terms are placed first so a kernel can walk `1:n_diagonal` and then
 `n_diagonal+1:n_terms` without asking which kind each term is.
 """
 flatten(operator) = flatten(compile(operator))
@@ -68,8 +62,7 @@ function flatten(op::CompiledOperator{T}) where {T}
         for f in term.factors
             push!(factor_position, Int32(f.position))
             # `f.colptr` indexes this factor's own `outs`/`vals`; shifting by what is already
-            # written makes it index the shared arrays instead, which removes an addition from
-            # the innermost loop.
+            # written makes it index the shared arrays instead.
             offset = length(vals)
             for c in f.colptr
                 push!(colptr, Int32(c + offset))
@@ -103,11 +96,10 @@ Value of diagonal term `t` on `state`, or zero if any factor's column is empty o
 end
 
 """
-Expand off-diagonal term `t` on `state` into `dst_*`, returning how many entries it produced.
+Expand off-diagonal term `t` on `state`, returning `(count, states, values)`.
 
-The two scratch pairs alternate as the term's factors are applied, exactly as the nested kernel
-does. They are passed in rather than allocated so that a caller in a loop — or a device thread
-with its own slice — owns the memory.
+The two scratch pairs alternate as the term's factors are applied. They are passed in so that a
+caller in a loop — or a device thread with its own slice — owns the memory.
 """
 function _flat_run_term!(
     op::FlatOperator{T}, t::Integer, state::S,
@@ -145,9 +137,7 @@ end
 """
 Fill column `b` of the output from `state`, returning how many entries it holds.
 
-Identical in behaviour to the nested kernel's `_fill_column!`, including reserving slot one for
-the diagonal and closing the gap when the diagonal turns out to be zero — every retained row
-costs one full evaluation of the wavefunction downstream.
+Identical in behaviour to the nested kernel's `_fill_column!`.
 """
 function _flat_fill_column!(
     configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer,
@@ -166,7 +156,6 @@ function _flat_fill_column!(
             v = res_v[j]
             iszero(v) && continue
             s′ = res_s[j]
-            # A non-diagonal matrix can still map a digit to itself for a particular input.
             if s′ == state
                 diagonal += v
             else

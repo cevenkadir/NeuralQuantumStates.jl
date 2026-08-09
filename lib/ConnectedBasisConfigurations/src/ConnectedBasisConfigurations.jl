@@ -5,20 +5,17 @@ The batched local-energy kernel: given an operator `Ĥ` and a *batch* of basis c
 `|s⟩`, produce every connected basis configuration `|s′⟩` together with its matrix element
 `⟨s′|Ĥ|s⟩`.
 
-This is the Julia counterpart of NetKet's `operator.get_conn_padded`, and it is the one piece
-of the operator layer that OperatorAlgebra.jl does not already provide: its `apply` consumes a
-vector or a `Dict` of states, not a batch of samples. Everything else — building `Ĥ`, normal
-ordering, fermionic signs, sparse and dense conversion — belongs upstream in OperatorAlgebra,
-and this package deliberately does not duplicate any of it.
+This is the Julia counterpart of NetKet's `operator.get_conn_padded`, and the one piece of the
+operator layer OperatorAlgebra.jl does not provide: its `apply` consumes a vector or a `Dict`
+of states, not a batch of samples. Building `Ĥ`, normal ordering, fermionic signs and sparse
+conversion all belong upstream and are not duplicated here.
 
-The kernel is the hot loop of variational Monte Carlo: it runs once per sample per optimization
-step. It is kept in its own package, depending only on SymBasis and OperatorAlgebra, so that it
-carries **no** Lux, autodiff, or GPU dependency and stays usable by any VMC code — neural or
-otherwise. Even those two dependencies are replaceable: the kernel reaches them only through
-the generic functions in `interface.jl`, and another library plugs in by adding methods.
+The kernel is the hot loop of variational Monte Carlo. It depends only on SymBasis and
+OperatorAlgebra — no Lux, autodiff or GPU — and reaches even those through the generic functions
+in `interface.jl`, so another basis or operator library plugs in by adding methods.
 
 # Entry points
-- [`compile`](@ref) — flatten an operator once, ahead of the loop; the reason this is fast
+- [`compile`](@ref) — flatten an operator once, ahead of the loop
 - [`connected_padded`](@ref) — the batched kernel, with and without a symmetry-reduced basis
 - [`connected_padded!`](@ref) — the same, into buffers the caller owns
 - [`connected`](@ref) — a single configuration, as a `Dict`
@@ -44,8 +41,7 @@ Three, all easy to get silently wrong:
     Convention 1 is SymBasis's. OperatorAlgebra's `sparse` and `apply` build their Kronecker
     products with site 1 as the **most** significant digit, so their matrix and this package's
     are related by a permutation of the basis rather than being equal. Chain models symmetric
-    under reversing the site order hide the difference completely — which makes a comparison
-    that happens to pass weaker evidence than it looks.
+    under site reversal hide the difference completely.
 
 # Example
 ```julia

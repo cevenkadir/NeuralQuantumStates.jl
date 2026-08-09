@@ -1,19 +1,13 @@
 """
     configurations(spec, states, nsites) -> Array
 
-Unpack `BaseInt` configurations into an array of **physical local values** — magnetic quantum
+Unpack `BaseInt` configurations into an array of physical local values — magnetic quantum
 numbers for a spin, occupation numbers for a boson — as taken from `spec`.
 
-Packed integers are the right representation for the operator kernel: compact, hashable, and
-cheap to permute. A neural network wants the opposite, an explicit numeric vector per
-configuration, and this is the boundary between the two.
-
 The degree-of-freedom axis comes **first**: a vector of `M` states becomes `(nsites, M)`, and
-an `(M, batch)` matrix as returned by [`connected_padded`](@ref) becomes
-`(nsites, M, batch)`. Julia is column-major, so this puts each configuration in contiguous
-memory, which is the layout a batched forward pass wants.
+an `(M, batch)` matrix as returned by [`connected_padded`](@ref) becomes `(nsites, M, batch)`.
+Julia being column-major, that keeps each configuration contiguous.
 
-# Example
 ```julia
 spec = Boson(3)
 res = connected_padded(H, states)
@@ -54,27 +48,15 @@ end
 """
     configurations!(out, values, states, nsites, backend) -> out
 
-Unpack packed configurations into `out` on a KernelAbstractions backend.
+Unpack packed configurations into `out`, of size `(nsites, length(states))`, on a
+KernelAbstractions backend. Defined by the extension KernelAbstractions activates.
 
-Defined by the extension that KernelAbstractions activates; without it there is no backend to
-run on, and this says so rather than failing later and less clearly.
+`values` is `collect(T, local_values(spec))` already resident on `backend`; the kernel indexes
+it with the digit it reads, since a specification is a host object. Passing it also fixes the
+element type, which must be a float — `configurations` returns `Rational` for a spin, and
+rationals cannot live on a GPU.
 
-Three things differ from [`configurations`](@ref), and each is there because a device demands
-it:
-
-- **`values` is passed in rather than taken from a specification.** It is
-  `collect(T, local_values(spec))` already resident on `backend` — a `d`-element vector the
-  kernel indexes with the digit it reads. A specification is a host object with no place in
-  device code.
-- **The element type is whatever `out` and `values` are made of, and it is a float.**
-  `configurations` returns `eltype(local_values(spec))`, which is `Rational{Int64}` for a spin;
-  rationals cannot live on a GPU at all, so the host path converts afterwards and pays a second
-  full-size array for it. Writing the float directly removes both.
-- **`out` is the caller's.** It is `(nsites, length(states))`, and the caller usually already
-  has it as part of a larger device allocation.
-
-`states` may have any shape; it is read in linear order, so `out`'s columns follow
-`vec(states)`.
+`states` may have any shape; it is read in linear order, so `out`'s columns follow `vec(states)`.
 """
 function configurations! end
 
@@ -84,9 +66,8 @@ function configurations! end
 Inverse of [`configurations`](@ref) for a single configuration: pack a vector of physical local
 values back into a `BaseInt`.
 
-Throws an `ArgumentError` if a value is not one of `spec`'s local values, which catches the
-common mistake of handing over a configuration built with the wrong convention — spins as
-`0, 1` rather than `-1//2, 1//2`, say.
+Throws an `ArgumentError` if a value is not one of `spec`'s local values, which catches a
+configuration built with the wrong convention — spins as `0, 1` rather than `-1//2, 1//2`.
 """
 function packed(spec, configuration::AbstractVector; T::Type=UInt, Ti::Type=Int)
     B = local_dimension(spec)
@@ -105,14 +86,10 @@ function packed(spec, configuration::AbstractVector; T::Type=UInt, Ti::Type=Int)
 end
 
 """
-    _digit_of(spec, value) -> Union{Int,Nothing}
-
 Zero-based local digit holding `value`, or `nothing` when `spec` has no such local state.
 
-The generic fallback searches `local_values`, which is what any new specification type gets
-for free. `Spin` and `Boson` skip the search: their local values are an arithmetic sequence,
-so the digit is a subtraction away, and `packed` sits on the boundary every batch of network
-inputs crosses.
+The fallback searches `local_values`, so a new specification type needs no method. `Spin` and
+`Boson` have arithmetic local values, so the digit is a subtraction away.
 """
 _digit_of(spec, value) = something(findfirst(==(value), local_values(spec)), 0) - 1
 

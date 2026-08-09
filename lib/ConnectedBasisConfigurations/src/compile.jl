@@ -37,12 +37,12 @@ products, same-site factors multiplied out, matrix elements promoted to the sing
 element type `T`, and each local matrix column-compressed.
 
 Build one with [`compile`](@ref) and hand it to [`connected_padded`](@ref) or
-[`connected`](@ref) instead of the operator itself. Doing so is worth it whenever the same
-operator is used more than once, which in variational Monte Carlo is always.
+[`connected`](@ref) instead of the operator itself, which is worth doing whenever the same
+operator is used more than once.
 
 Terms are split by whether they can change the configuration at all. Diagonal terms — `σᶻσᶻ`,
 `n_i n_j`, an uncancelled Jordan–Wigner tail — are the majority in a typical lattice
-Hamiltonian and are evaluated by a branch-free loop that never touches a state.
+Hamiltonian and run through a branch-free loop that never writes a state.
 """
 struct CompiledOperator{T}
     diagonal::Vector{CompiledTerm{T}}
@@ -63,11 +63,10 @@ Base.show(io::IO, ::MIME"text/plain", op::CompiledOperator) = show(io, op)
 """
     max_conn_size(compiled) -> Int
 
-Upper bound on the number of connected configurations any single configuration can have under
-`compiled`, known without looking at a single sample.
+Upper bound on the number of connected configurations any configuration can have, known without
+looking at a sample. [`connected_padded!`](@ref) buffers are sized by it.
 
-This is what [`connected_padded!`](@ref) buffers must be sized by. The bound counts one slot
-for the diagonal plus the widest branching each off-diagonal term can produce, so it is exact
+One slot for the diagonal plus the widest branching each off-diagonal term can produce — exact
 for the usual lattice Hamiltonian, where every off-diagonal term is a single hop or flip.
 """
 max_conn_size(op::CompiledOperator) = op.max_conn
@@ -80,12 +79,11 @@ max_conn_size(op::CompiledOperator) = op.max_conn
 Flatten `operator` once into the form the kernel runs on, so that the per-sample work contains
 no operator-tree traversal, no Jordan–Wigner expansion, and no dynamic dispatch.
 
-`compile` is the entire reason this package is fast. It is also the only place the operator
-backend is consulted — see [`expand_terms`](@ref) — so an operator type from any library works
-here as long as it implements that interface.
+This is also the only place the operator backend is consulted — see [`expand_terms`](@ref) — so
+an operator type from any library works as long as it implements that interface.
 
-Passing a `basis` compiles the symmetry-reduced path instead, caching the state-to-index
-lookup that would otherwise be rebuilt over the whole basis on every call.
+Passing a `basis` compiles the symmetry-reduced path instead, caching the state-to-index lookup
+that would otherwise be rebuilt over the whole basis on every call.
 
 # Example
 ```julia
@@ -99,8 +97,6 @@ function compile end
 
 compile(operator) = compile(operator, amplitude_type(operator))
 
-# Idempotent, so that a caller can accept "an operator, compiled or not" and compile it
-# unconditionally.
 compile(op::CompiledOperator) = op
 
 function compile(operator, ::Type{T}) where {T<:Number}
@@ -131,9 +127,9 @@ end
 Multiply out a term's same-site factors and drop the identities, returning `nothing` if the
 term is identically zero.
 
-Factors on distinct sites commute — Jordan–Wigner strings are already explicit by the time
-[`expand_terms`](@ref) returns — so gathering same-site factors is sound as long as their
-relative order within the product is preserved, which it is.
+Factors on distinct sites commute — Jordan–Wigner strings are explicit by the time
+[`expand_terms`](@ref) returns — so gathering same-site factors is sound provided their relative
+order is preserved, which it is.
 """
 function _merge_factors(raw, ::Type{T}) where {T}
     merged = Pair{Int,Matrix{T}}[]

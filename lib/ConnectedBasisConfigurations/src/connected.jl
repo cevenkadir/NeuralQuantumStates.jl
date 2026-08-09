@@ -5,8 +5,8 @@
 """
 Ping-pong buffers for one term's intermediate `(configuration, amplitude)` pairs.
 
-A term is applied one factor at a time, each factor reading the current pairs and writing the
-next ones, so two buffers are enough no matter how many factors there are.
+A term is applied one factor at a time, each reading the current pairs and writing the next, so
+two buffers suffice however many factors there are.
 """
 struct Scratch{S,T}
     a_states::Vector{S}
@@ -27,8 +27,7 @@ end
 Apply one term to a single configuration, returning `(n, states, vals)` — the number of
 `(configuration, amplitude)` pairs produced and the scratch buffers holding them.
 
-Which of the two buffers ends up holding the result depends on how many factors the term has,
-so it is returned rather than assumed.
+Which buffer holds the result depends on the number of factors, so it is returned.
 """
 function _run_term(term::CompiledTerm{T}, state::S, scratch::Scratch{S,T}) where {S,T}
     states, vals = scratch.a_states, scratch.a_vals
@@ -63,10 +62,8 @@ function _run_term(term::CompiledTerm{T}, state::S, scratch::Scratch{S,T}) where
 end
 
 """
-Value a purely diagonal term takes on one configuration.
-
-Every factor is diagonal, so nothing branches and no configuration is ever written: the term
-contributes one number, the product of the diagonal entries the configuration selects.
+Value a purely diagonal term takes on one configuration: the product of the diagonal entries it
+selects. Nothing branches, so no configuration is written.
 """
 function _diagonal_value(term::CompiledTerm{T}, state) where {T}
     v = one(T)
@@ -187,45 +184,33 @@ end
     connected_padded(operator, states) -> (; configs, mels, counts)
 
 Connected configurations and matrix elements for a **batch** of packed configurations — the
-counterpart of NetKet's `get_conn_padded`, and the kernel a variational Monte Carlo local
-energy is built from.
+counterpart of NetKet's `get_conn_padded`, and what a local energy is built from.
 
-`states` may be an array of any shape. `configs` and `mels` gain one leading axis for the
-connections and keep the batch shape otherwise, so a vector of `B` states gives
-`(max_conn, B)` and an `(A, B)` matrix gives `(max_conn, A, B)`. `counts` has the shape of
-`states`. NetKet puts the connection axis last; here it comes first, because Julia is
-column-major and this is what keeps one sample's connections contiguous.
+`states` may have any shape. `configs` and `mels` gain one leading axis for the connections and
+keep the batch shape otherwise, so a vector of `B` states gives `(max_conn, B)`; `counts` has
+the shape of `states` and says how many entries per sample are real rather than padding. NetKet
+puts the connection axis last; here it comes first, so one sample's connections stay contiguous.
 
-`operator` may be a [`CompiledOperator`](@ref) from [`compile`](@ref), which skips the
-flattening work; passing the operator itself compiles it on every call.
-
-# Returns
-- `configs`: `(max_conn, size(states)...)` connected configurations.
-- `mels`: `(max_conn, size(states)...)` matrix elements.
-- `counts`: how many entries per sample are real rather than padding.
+`operator` may be a [`CompiledOperator`](@ref), which skips the per-call flattening.
 
 # Padding
 
-Different configurations have different numbers of connections, so the leading axis is padded
-to a common length. Padded slots repeat the sample itself and carry a matrix element of
-**zero**, following NetKet. That choice matters twice over: it keeps `mels` a concrete numeric
-array rather than a `Union{T,Missing}` one, and it makes the local energy
+Padded slots repeat the sample itself with a matrix element of **zero**. That keeps `mels` a
+concrete numeric array rather than a `Union{T,Missing}` one, and makes
 
 ```julia
 E_loc(s) = sum(mels[:, b] .* exp.(logψ.(configs[:, b]) .- logψ(s)))
 ```
 
-correct with no masking at all, because a zero matrix element contributes nothing — and a
-repeated sample is a configuration the wavefunction can safely be evaluated on.
+correct with no masking: a zero matrix element contributes nothing, and a repeated sample is
+something the wavefunction can safely be evaluated on.
 
-# Ordering, and repeated configurations
+# Ordering
 
-Entries appear in term order: the diagonal first when it is non-zero, then each off-diagonal
-term's contribution. Two terms reaching the **same** configuration produce two entries rather
-than one summed entry, which is what NetKet does and what keeps the kernel free of any
-per-sample hash table. Every consumer sums over the connection axis, so the result is
-unchanged; only the row count differs. Use [`connected`](@ref) when you want the summed,
-deduplicated matrix elements.
+Entries appear in term order, the diagonal first when non-zero. Two terms reaching the same
+configuration produce two entries rather than one summed entry, which keeps the kernel free of
+a per-sample hash table; consumers sum over the connection axis, so only the row count differs.
+[`connected`](@ref) gives the summed, deduplicated form.
 """
 function connected_padded end
 
@@ -260,15 +245,12 @@ end
 In-place [`connected_padded`](@ref), writing into caller-owned buffers.
 
 `configs` and `mels` must have `max_conn_size(compiled)` rows and the batch shape of `states`
-otherwise; `counts` must have the shape of `states`. Unlike the allocating form, the leading
-axis is **not** trimmed to the batch's actual maximum — the buffers keep their full height,
-with every slot above a sample's count padded inert — so the same buffers can be reused across
+otherwise; `counts` must have the shape of `states`. Unlike the allocating form the leading
+axis is **not** trimmed to the batch's actual maximum, so the same buffers can be reused across
 calls whose connection counts differ.
 
-This is the form to use inside an optimization loop, where the batch shape is fixed and
-allocating a fresh pair of arrays per step is pure overhead. The per-sample work allocates
-nothing; what remains is one small scratch buffer whose size is set by the operator's
-branching and **not** by the batch, so the cost per step stops growing with the batch size.
+This is the form for an optimization loop. The per-sample work allocates nothing, and the one
+scratch buffer is sized by the operator's branching rather than by the batch.
 """
 function connected_padded!(
     configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
@@ -308,19 +290,17 @@ end
 
 As above, but for configurations living in a **symmetry-reduced** basis.
 
-Each connected configuration is mapped back to the representative of its symmetry orbit, and
-its matrix element is rescaled by the character of the symmetry operation together with the
-ratio of orbit norms — the standard factor `sqrt(norm[m] / norm[n])`. Configurations whose
-representative is absent from `basis` fall outside the sector and are dropped.
+Each connected configuration is mapped back to its orbit representative and its matrix element
+rescaled by the symmetry character and the orbit-norm ratio `sqrt(norm[m] / norm[n])`.
+Configurations whose representative is absent from `basis` fall outside the sector and are
+dropped.
 
 Contributions landing on the same representative **are** summed here, unlike the unreduced
 path: distinct configurations of one orbit are the same basis state, so leaving them separate
-would not merely be redundant, it would misreport how many basis states the sector connects.
+would misreport how many basis states the sector connects.
 
-Matrix elements are complex even for a real operator, because the character need not be.
-
-Pass `compile(operator, basis)` instead of `operator` to hoist the state-to-index lookup out of
-the call.
+Matrix elements are complex even for a real operator, because the character need not be. Pass
+`compile(operator, basis)` to hoist the state-to-index lookup out of the call.
 """
 connected_padded(operator, states::AbstractArray, basis) =
     connected_padded(compile(operator, basis), states)
@@ -375,8 +355,8 @@ function _fill_sector_column!(
         end
     end
 
-    # Cancellation between orbit members is real and common, so compact the exact zeros out
-    # rather than spend a wavefunction evaluation on each.
+    # Cancellation between orbit members is common; compact the exact zeros out rather than
+    # spend a wavefunction evaluation on each.
     kept = 0
     for j in 1:k
         v = mels[j, b]
@@ -389,12 +369,11 @@ function _fill_sector_column!(
 end
 
 """
-Fold one connected configuration back onto its orbit representative and add it to column `b`,
+Fold one connected configuration onto its orbit representative and add it to column `b`,
 returning the updated number of entries.
 
-Folding maps many configurations onto one representative, so entries must be summed. The
-search for an existing entry is linear because a column holds a handful of them, where
-scanning beats hashing outright.
+Many configurations fold onto one representative, so entries are summed. The search is linear
+because a column holds only a handful, where scanning beats hashing.
 """
 function _accumulate_folded!(
     configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer, k::Int,
@@ -422,9 +401,8 @@ end
 """
 Trim the connection axis to what the batch actually used, and restore the batch shape.
 
-The buffers were allocated at the operator's compile-time bound, which for a lattice
-Hamiltonian is usually exactly what the batch reaches — so the common case is a reshape with no
-copy at all, and only a batch that falls short of the bound pays for one.
+A batch that reaches the operator's compile-time bound — the usual case for a lattice
+Hamiltonian — reshapes without copying.
 """
 function _reshape_result(
     configs::Matrix{S}, mels::Matrix{T}, counts::Vector{Int},

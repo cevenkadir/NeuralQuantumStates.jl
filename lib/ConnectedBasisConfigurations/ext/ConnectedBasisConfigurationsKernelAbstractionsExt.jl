@@ -1,33 +1,18 @@
 """
 The connected-configuration kernel, written once and run on any backend KernelAbstractions
-supports — a CPU, CUDA, ROCm, Metal or oneAPI.
+supports.
 
-Two things had to change before the kernel could exist at all, and both live elsewhere:
-[`FlatOperator`](@ref) removed the nesting that made a compiled operator impossible to upload,
-and the accessors below removed the bounds checks that make a digit read impossible to compile.
-What is left here is the same algorithm the CPU kernel runs, with the sample index coming from
-`@index` instead of a loop.
+It is the same algorithm as the CPU kernel in `flat.jl`, with the sample index coming from
+`@index` instead of a loop — deliberately so, since the two are checked against each other slot
+for slot. Two things had to exist first: [`FlatOperator`](@ref), which removed the nesting that
+made a compiled operator impossible to upload, and the unchecked accessors below.
 
-The work is embarrassingly parallel over samples — one thread owns one column of the output and
-touches nothing else — but each thread needs somewhere to expand a term into. That scratch is
-allocated once, per sample rather than per thread, and passed in.
+The work is parallel over samples — one thread owns one column of the output — but each thread
+needs somewhere to expand a term into, so scratch is allocated per sample and passed in.
 
-A second, much smaller kernel unpacks the packed states into the numeric array a network
-consumes ([`ConnectedBasisConfigurations.configurations!`](@ref)). The two belong together
-because they are the pair that keeps a batch on the device from end to end: computing the
-connections there and then unpacking them on the host would put the larger of the two arrays
-back on the wire.
-
-# Measured
-
-A transverse-field Ising chain of twelve sites, 4096 configurations, on a Quadro GV100: the host
-kernel takes 1.217 ms and moving its results to the device a further 2.716 ms, against 48.9 µs
-here. That is 24.9× against the host kernel alone and **80.4× against the host kernel plus the
-transfer it replaces**, with output identical to the host kernel's in every slot.
-
-Unpacking costs a further 21.4 µs on the device against 1.331 ms on the host, so the pair is
-54× the host path it replaces. Wired into `NQSCore.local_energy`, that took a device `expect`
-on the same model from 5.897 ms to 1.753 ms.
+A second, smaller kernel ([`ConnectedBasisConfigurations.configurations!`](@ref)) unpacks the
+packed states into the numeric array a network consumes. The two belong together: computing the
+connections here and unpacking them on the host would put the larger array back on the wire.
 """
 module ConnectedBasisConfigurationsKernelAbstractionsExt
 
@@ -43,13 +28,10 @@ using SymBasis.DigitBase: BaseInt
 
 The digit at `position`, without the bounds checks of the ordinary accessor.
 
-Those checks `throw`, and a `throw` carrying an interpolated message cannot be compiled into a
-GPU kernel — it needs to allocate a string, which is exactly what device code may not do. They
-are also unnecessary here: every position comes from a compiled operator's factor, and every
-digit written comes from a column of a `d × d` local matrix, so both are in range by
-construction rather than by inspection.
-
-Kept private to this extension. The checked accessors remain what everything else uses.
+Those checks `throw` with an interpolated message, which cannot be compiled into a GPU kernel —
+it would allocate a string. They are also unnecessary: positions come from a compiled operator's
+factors and digits from the columns of a `d × d` local matrix, so both are in range by
+construction.
 """
 @inline function unchecked_read(state::BaseInt{V,Ti,B}, position::Integer) where {V,Ti,B}
     if ispow2(B)
@@ -143,7 +125,6 @@ end
                     break
                 end
                 n = m
-                # Ping-pong by index rather than by branching on a flag.
                 src, dst = dst, src
             end
 
@@ -152,7 +133,6 @@ end
                     v = scratch_vals[j, src, b]
                     iszero(v) && continue
                     s′ = scratch_states[j, src, b]
-                    # A non-diagonal matrix can still map a digit to itself for a given input.
                     if s′ == state
                         diagonal += v
                     else
@@ -164,8 +144,7 @@ end
             end
         end
 
-        # Close the gap rather than leave an inert row: every retained row costs one full
-        # evaluation of the wavefunction downstream.
+        # Close the gap: every retained row costs one wavefunction evaluation downstream.
         if iszero(diagonal)
             for j in 2:k
                 configs[j-1, b] = configs[j, b]
@@ -178,8 +157,7 @@ end
         end
         counts[b] = k
 
-        # Pad inert: the sample itself with a zero matrix element, so a consumer that reduces
-        # over the whole column gets exactly zero from these and never `0 * Inf`.
+        # Inert padding: the sample itself with a zero matrix element.
         for j in (k+1):height
             configs[j, b] = state
             mels[j, b] = zero(T)
@@ -189,14 +167,7 @@ end
 
 # ------------------------------------------------------------------------- unpacking states
 
-"""
-Write the physical local value of every digit of every state into a `(nsites, batch)` array.
-
-One thread owns one entry, which is the whole of the parallelism here: no thread reads what
-another writes, and the digit extraction is a shift and a mask. `values` is the `d`-element
-table of local values, resident on the same backend, so the kernel indexes it rather than
-knowing anything about degrees of freedom.
-"""
+"""One thread per entry: `out[i, b]` is the local value of digit `i` of state `b`."""
 @kernel function configurations_kernel!(out, @Const(values), @Const(states))
     i, b = @index(Global, NTuple)
     @inbounds out[i, b] = values[unchecked_read(states[b], i)+1]
@@ -263,8 +234,8 @@ end
 
 Move a flat operator's arrays onto `backend`, so a kernel there can read them.
 
-This is the step [`FlatOperator`](@ref) exists to make possible: every field is a plain vector
-of numbers, so moving the operator is moving seven arrays and nothing else.
+This is what [`FlatOperator`](@ref) exists to make possible: every field is a plain vector of
+numbers, so moving the operator is moving seven arrays and nothing else.
 """
 function ConnectedBasisConfigurations.to_backend(op::FlatOperator{T}, backend) where {T}
     move(v) = copyto!(KernelAbstractions.allocate(backend, eltype(v), length(v)), v)
