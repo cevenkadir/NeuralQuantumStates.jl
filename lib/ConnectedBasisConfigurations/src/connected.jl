@@ -317,7 +317,39 @@ function connected_padded(sector::CompiledSector{T}, states::AbstractArray{S}) w
     scratch = Scratch(op, S)
 
     for b in 1:n
-        counts[b] = _fill_sector_column!(configs, mels, b, sector, @inbounds(flat[b]), scratch)
+        state = @inbounds flat[b]
+        rep = lookup_index(sector.lookup, state)
+        rep == 0 && throw(ArgumentError(
+            "sample $b is not a representative state of the given basis"
+        ))
+
+        diagonal = zero(T)
+        for term in op.diagonal
+            diagonal += _diagonal_value(term, state)
+        end
+        k = _accumulate_folded!(configs, mels, b, 0, sector, rep, state, diagonal)
+
+        for term in op.offdiagonal
+            m, expanded, vals = _run_term(term, state, scratch)
+            for t in 1:m
+                k = _accumulate_folded!(
+                    configs, mels, b, k, sector, rep,
+                    @inbounds(expanded[t]), @inbounds(vals[t])
+                )
+            end
+        end
+
+        # Cancellation between orbit members is common; compact the exact zeros out rather than
+        # spend a wavefunction evaluation on each.
+        kept = 0
+        for j in 1:k
+            v = mels[j, b]
+            iszero(v) && continue
+            kept += 1
+            configs[kept, b] = configs[j, b]
+            mels[kept, b] = v
+        end
+        counts[b] = kept
     end
 
     max_conn = isempty(counts) ? 0 : maximum(counts)
@@ -326,46 +358,6 @@ function connected_padded(sector::CompiledSector{T}, states::AbstractArray{S}) w
     end
 
     return _reshape_result(configs, mels, counts, max_conn, size(states))
-end
-
-function _fill_sector_column!(
-    configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer,
-    sector::CompiledSector{T}, state::S, scratch::Scratch{S,T}
-) where {S,T}
-    op = sector.operator
-    norms = sector.norms
-
-    n = lookup_index(sector.lookup, state)
-    n == 0 && throw(ArgumentError(
-        "sample $b is not a representative state of the given basis"
-    ))
-
-    diagonal = zero(T)
-    for term in op.diagonal
-        diagonal += _diagonal_value(term, state)
-    end
-    k = _accumulate_folded!(configs, mels, b, 0, sector, n, state, diagonal)
-
-    for term in op.offdiagonal
-        m, states, vals = _run_term(term, state, scratch)
-        for t in 1:m
-            k = _accumulate_folded!(
-                configs, mels, b, k, sector, n, @inbounds(states[t]), @inbounds(vals[t])
-            )
-        end
-    end
-
-    # Cancellation between orbit members is common; compact the exact zeros out rather than
-    # spend a wavefunction evaluation on each.
-    kept = 0
-    for j in 1:k
-        v = mels[j, b]
-        iszero(v) && continue
-        kept += 1
-        configs[kept, b] = configs[j, b]
-        mels[kept, b] = v
-    end
-    return kept
 end
 
 """

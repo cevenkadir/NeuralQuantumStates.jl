@@ -144,15 +144,11 @@ function _merge_factors(raw, ::Type{T}) where {T}
 
     # An identity factor contributes nothing and only widens the term; cancelling
     # Jordan-Wigner strings show up here as exactly that.
-    filter!(p -> !_isidentity(last(p)), merged)
+    filter!(p -> last(p) != I, merged)
     any(p -> iszero(last(p)), merged) && return nothing
 
     return [_compress(position, mat) for (position, mat) in merged]
 end
-
-_isidentity(mat::AbstractMatrix) =
-    size(mat, 1) == size(mat, 2) &&
-    all(mat[i, j] == (i == j) for i in axes(mat, 1), j in axes(mat, 2))
 
 function _compress(position::Integer, mat::Matrix{T}) where {T}
     size(mat, 1) == size(mat, 2) || throw(DimensionMismatch(

@@ -80,105 +80,6 @@ function flatten(op::CompiledOperator{T}) where {T}
     )
 end
 
-"""
-Value of diagonal term `t` on `state`, or zero if any factor's column is empty on the diagonal.
-"""
-@inline function _flat_diagonal_value(op::FlatOperator{T}, t::Integer, state) where {T}
-    v = one(T)
-    @inbounds for fi in op.term_start[t]:(op.term_start[t+1]-1)
-        d = read_digit(state, op.factor_position[fi])
-        cs = op.factor_col_start[fi]
-        lo = op.colptr[cs+d]
-        lo < op.colptr[cs+d+1] || return zero(T)
-        v *= op.vals[lo]
-    end
-    return v
-end
-
-"""
-Expand off-diagonal term `t` on `state`, returning `(count, states, values)`.
-
-The two scratch pairs alternate as the term's factors are applied. They are passed in so that a
-caller in a loop — or a device thread with its own slice — owns the memory.
-"""
-function _flat_run_term!(
-    op::FlatOperator{T}, t::Integer, state::S,
-    a_states::AbstractVector{S}, a_vals::AbstractVector{T},
-    b_states::AbstractVector{S}, b_vals::AbstractVector{T},
-) where {S,T}
-    cur_s, cur_v, alt_s, alt_v = a_states, a_vals, b_states, b_vals
-    n = 1
-    @inbounds cur_s[1] = state
-    @inbounds cur_v[1] = one(T)
-
-    @inbounds for fi in op.term_start[t]:(op.term_start[t+1]-1)
-        pos = op.factor_position[fi]
-        cs = op.factor_col_start[fi]
-        m = 0
-        for k in 1:n
-            s = cur_s[k]
-            amp = cur_v[k]
-            d = read_digit(s, pos)
-            for p in op.colptr[cs+d]:(op.colptr[cs+d+1]-1)
-                m += 1
-                alt_s[m] = write_digit(s, pos, op.outs[p])
-                alt_v[m] = amp * op.vals[p]
-            end
-        end
-        # An empty column annihilates the configuration, and with it the whole term.
-        m == 0 && return (0, cur_s, cur_v)
-        n = m
-        cur_s, alt_s = alt_s, cur_s
-        cur_v, alt_v = alt_v, cur_v
-    end
-    return (n, cur_s, cur_v)
-end
-
-"""
-Fill column `b` of the output from `state`, returning how many entries it holds.
-
-Identical in behaviour to the nested kernel's `_fill_column!`.
-"""
-function _flat_fill_column!(
-    configs::AbstractMatrix{S}, mels::AbstractMatrix{T}, b::Integer,
-    op::FlatOperator{T}, state::S,
-    a_states, a_vals, b_states, b_vals,
-) where {S,T}
-    diagonal = zero(T)
-    for t in 1:op.n_diagonal
-        diagonal += _flat_diagonal_value(op, t, state)
-    end
-
-    k = 1
-    @inbounds for t in (op.n_diagonal+1):op.n_terms
-        n, res_s, res_v = _flat_run_term!(op, t, state, a_states, a_vals, b_states, b_vals)
-        for j in 1:n
-            v = res_v[j]
-            iszero(v) && continue
-            s′ = res_s[j]
-            if s′ == state
-                diagonal += v
-            else
-                k += 1
-                configs[k, b] = s′
-                mels[k, b] = v
-            end
-        end
-    end
-
-    if iszero(diagonal)
-        @inbounds for j in 2:k
-            configs[j-1, b] = configs[j, b]
-            mels[j-1, b] = mels[j, b]
-        end
-        return k - 1
-    end
-
-    @inbounds configs[1, b] = state
-    @inbounds mels[1, b] = diagonal
-    return k
-end
-
 function connected_padded!(
     configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
     op::FlatOperator{T}, states::AbstractArray{S}
@@ -201,19 +102,101 @@ function connected_padded!(
     flat_mels = reshape(mels, height, n)
     flat_counts = vec(counts)
 
+    # Two buffers to expand one term into, alternating as its factors are applied, reused
+    # across the batch. From here down this is the same code in the same order as
+    # `connected_kernel!` in the KernelAbstractions extension, which gives each thread its own
+    # slice instead; the two are meant to be read side by side.
     width = max(op.max_branch, 1)
-    a_states = Vector{S}(undef, width)
-    a_vals = Vector{T}(undef, width)
-    b_states = Vector{S}(undef, width)
-    b_vals = Vector{T}(undef, width)
+    cur_s, alt_s = Vector{S}(undef, width), Vector{S}(undef, width)
+    cur_v, alt_v = Vector{T}(undef, width), Vector{T}(undef, width)
 
-    for b in 1:n
-        s = @inbounds flat[b]
-        k = _flat_fill_column!(
-            flat_configs, flat_mels, b, op, s, a_states, a_vals, b_states, b_vals
-        )
-        @inbounds flat_counts[b] = k
-        _pad_column!(flat_configs, flat_mels, b, k + 1, height, s)
+    @inbounds for b in 1:n
+        state = flat[b]
+
+        # Diagonal terms. A factor whose column is empty on the diagonal kills its whole term.
+        diagonal = zero(T)
+        for t in 1:op.n_diagonal
+            v = one(T)
+            alive = true
+            for fi in op.term_start[t]:(op.term_start[t+1]-1)
+                d = read_digit(state, op.factor_position[fi])
+                cs = op.factor_col_start[fi]
+                lo = op.colptr[cs+d]
+                if lo >= op.colptr[cs+d+1]
+                    alive = false
+                    break
+                end
+                v *= op.vals[lo]
+            end
+            alive && (diagonal += v)
+        end
+
+        # Off-diagonal terms. Slot one is held for the diagonal and filled last.
+        k = 1
+        for t in (op.n_diagonal+1):op.n_terms
+            src_s, src_v, dst_s, dst_v = cur_s, cur_v, alt_s, alt_v
+            m = 1
+            src_s[1] = state
+            src_v[1] = one(T)
+
+            alive = true
+            for fi in op.term_start[t]:(op.term_start[t+1]-1)
+                pos = op.factor_position[fi]
+                cs = op.factor_col_start[fi]
+                w = 0
+                for j in 1:m
+                    s = src_s[j]
+                    amp = src_v[j]
+                    d = read_digit(s, pos)
+                    for q in op.colptr[cs+d]:(op.colptr[cs+d+1]-1)
+                        w += 1
+                        dst_s[w] = write_digit(s, pos, op.outs[q])
+                        dst_v[w] = amp * op.vals[q]
+                    end
+                end
+                if w == 0
+                    alive = false
+                    break
+                end
+                m = w
+                src_s, dst_s = dst_s, src_s
+                src_v, dst_v = dst_v, src_v
+            end
+
+            if alive
+                for j in 1:m
+                    v = src_v[j]
+                    iszero(v) && continue
+                    s′ = src_s[j]
+                    if s′ == state
+                        diagonal += v
+                    else
+                        k += 1
+                        flat_configs[k, b] = s′
+                        flat_mels[k, b] = v
+                    end
+                end
+            end
+        end
+
+        # Close the gap: every retained row costs one wavefunction evaluation downstream.
+        if iszero(diagonal)
+            for j in 2:k
+                flat_configs[j-1, b] = flat_configs[j, b]
+                flat_mels[j-1, b] = flat_mels[j, b]
+            end
+            k -= 1
+        else
+            flat_configs[1, b] = state
+            flat_mels[1, b] = diagonal
+        end
+        flat_counts[b] = k
+
+        # Inert padding: the sample itself with a zero matrix element.
+        for j in (k+1):height
+            flat_configs[j, b] = state
+            flat_mels[j, b] = zero(T)
+        end
     end
 
     return (; configs=configs, mels=mels, counts=counts)
