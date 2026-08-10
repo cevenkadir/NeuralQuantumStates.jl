@@ -422,30 +422,55 @@ let spec = Spin(1 // 2), nsites = NSITES
     # ------------------------------------------------------------------------- agreement
 
     # A faster wrong gradient is not a result, and this suite is read from a file by someone who
-    # did not watch it run, so it has to say so itself. The comparison is on the rung the library
-    # actually differentiates, whose gradient is a plain real vector under every engine.
-    println("\nagreement on the rung the library uses")
+    # did not watch it run, so it has to say so itself.
+    #
+    # Every rung of the same loss is compared, not just the one the library differentiates today,
+    # because the rungs disagree about *convention* and not only about speed. The library takes
+    # the real and imaginary parts of a complex parameter as 2n independent reals and recombines
+    # them, which is always valid; differentiating with respect to the complex parameters directly
+    # instead lets the engine choose, and a conjugate or a factor of two there would be a wrong
+    # gradient that still descends plausibly. Since the compiled region would rather not flatten
+    # at all — `- split - restore` costs the same as the full closure — whether these agree is
+    # what decides that it may skip it.
+    #
+    # `match_parameter_shape` is the normalizer: given the flat parameters it recombines a 2n real
+    # gradient and merely restores an n-element complex one, so one call puts both in the shape of
+    # the parameters. A rung that differentiated the NamedTuple is already there.
+    as_parameters(g::NamedTuple) = map(Array, g)
+    as_parameters(g) = NQSCore.match_parameter_shape(Array(g), flat, restore)
+    flatten_for_compare(g) = first(NQSCore.flatten_parameters(as_parameters(g)))
+
+    println("\nagreement, every rung of the same loss")
     reference = get(gradients, "split + restore + cotangent + model|Zygote", nothing)
     if reference === nothing
         println("  Zygote produced no gradient to compare against")
     else
-        for engine in ("Enzyme", "Reactant")
-            g = get(gradients, "split + restore + cotangent + model|$engine", nothing)
-            if g === nothing
-                println("  $engine: no gradient")
-                continue
+        ref = flatten_for_compare(reference)
+        # The last two rungs differentiate `model_loss`, a different scalar, so they are not
+        # comparable with these and are left out rather than compared against the wrong thing.
+        for label in ("split + restore + cotangent + model", "  - split", "  - split - restore")
+            for engine in ("Zygote", "Enzyme", "Reactant")
+                g = get(gradients, "$label|$engine", nothing)
+                g === nothing && continue
+                # Reactant's tolerance is looser on purpose: XLA reassociates, and Lux's own
+                # documentation reports differences around 1e-8 against the eager path.
+                tol = engine == "Reactant" ? 1e-5 : 1e-10
+                what = "$(strip(label)) / $engine"
+                try
+                    rel = norm(flatten_for_compare(g) .- ref) / norm(ref)
+                    ok = rel <= tol
+                    @printf("  %-44s %.3e  %s\n", what, rel, ok ? "agrees" : "DISAGREES")
+                    ok || push!(FAILURES, (what, "gradient disagrees with the split rung", ""))
+                catch err
+                    @printf("  %-44s %s\n", what, "not comparable")
+                    failed(what, err)
+                end
             end
-            # Reactant's tolerance is looser on purpose: XLA reassociates, and Lux's own
-            # documentation reports differences around 1e-8 against the eager path.
-            tol = engine == "Reactant" ? 1e-5 : 1e-10
-            h = Array(g)
-            rel = norm(h .- reference) / norm(reference)
-            @printf("  %-30s relative %.3e   (tolerance %.0e)  %s\n",
-                    engine, rel, tol, isapprox(h, reference; rtol=tol) ? "agrees" : "DISAGREES")
-            isapprox(h, reference; rtol=tol) ||
-                push!(FAILURES, ("$engine vs Zygote, split rung",
-                                 "gradients disagree beyond the tolerance", ""))
         end
+        println("""
+      A rung that disagrees is not a bug in that rung — it is a different convention for the
+      derivative of a real loss with respect to a complex parameter. It says the compiled region
+      has to keep the real/imag split rather than differentiate the parameters directly.""")
     end
 
     # --------------------------------------------------- the two halves of the layer
