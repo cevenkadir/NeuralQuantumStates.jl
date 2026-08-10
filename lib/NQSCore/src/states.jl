@@ -249,8 +249,7 @@ function local_estimators(
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
     O = log_derivatives(
-        a, θ, x; backend=_ad_backend(vs.backend), holomorphic=holomorphic,
-        chunk_size=chunk_size
+        a, θ, x; backend=vs.backend, holomorphic=holomorphic, chunk_size=chunk_size
     )
 
     return (; E=E, O=O, weights=sample_weights(vs, logψ))
@@ -286,17 +285,23 @@ to sum over a symmetry sector instead.
 - `ansatz`, `parameters`: the wavefunction.
 - `basis`: the configurations summed over.
 - `backend`: the DifferentiationInterface backend used for [`log_derivatives`](@ref).
+- `compiler`: `nothing`, or something like [`AutoReactant`](@ref) that compiles a whole step.
+  A separate field from `backend` because they answer separate questions — which engine
+  differentiates, and whether anything compiles.
 """
-mutable struct FullSumState{A<:AbstractAnsatz,P,S,B} <: AbstractVariationalState
+mutable struct FullSumState{A<:AbstractAnsatz,P,S,B,C} <: AbstractVariationalState
     ansatz::A
     parameters::P
     basis::S
     backend::B
+    compiler::C
 end
 
-function FullSumState(ansatz::AbstractAnsatz, parameters; backend, basis=nothing)
+function FullSumState(
+    ansatz::AbstractAnsatz, parameters; backend, basis=nothing, compiler=nothing
+)
     b = basis === nothing ? default_basis(ansatz) : basis
-    return FullSumState(ansatz, parameters, b, backend)
+    return FullSumState(ansatz, parameters, b, backend, compiler)
 end
 
 """
@@ -347,34 +352,28 @@ holding parameters in its own array type, and that would work for [`FullSumState
 part of any compiled region. Parameters stay ordinary arrays, the sampler stays untouched, and
 what crosses to the compiler is whatever a step needs, per step.
 """
-compiled_expect(vs, operator, states, backend) = nothing
+compiled_expect(vs, operator, states, compiler) = nothing
 
 """
-    Compiled(inner)
+    AutoReactant()
 
-Ask for a step computed by a compiler, with `inner` for everything that has no compiled form.
+Compile a whole step with Reactant, rather than running it operation by operation.
 
-Passed as a state's `backend`: `Compiled(AutoZygote())` means *compile `expect` and
-`expect_and_grad`, and differentiate with Zygote everywhere else*. It is not an
-`ADTypes` backend and does not pretend to be one — a compiler is not an answer to "which
-automatic-differentiation engine", which is what that field otherwise carries.
+Passed as a state's `compiler`, which is a different question from its `backend`: `backend` says
+which automatic-differentiation engine differentiates, and `compiler` says whether anything
+compiles. Reactant answers only the second — it reaches Enzyme on its own behalf, and is not an
+`ADTypes` object — so conflating the two in one field would make `expect` and stochastic
+reconfiguration disagree about what the field meant.
 
-`inner` is not a formality. [`log_derivatives`](@ref) has no compiled region — stochastic
-reconfiguration wants the whole Jacobian, not one contraction of it — and neither does a
-`chunk_size`d gradient, whose point is to bound the memory of a pass the compiled region takes in
-one. Both go to `inner`, so choosing a compiled step costs nothing elsewhere.
+Only `expect` and `expect_and_grad` have compiled forms. [`log_derivatives`](@ref) does not —
+stochastic reconfiguration wants the whole Jacobian, not one contraction of it — and neither does
+a `chunk_size`d gradient, whose point is to bound the memory of a pass a compiled region takes in
+one. Those go on using `backend`, untouched.
 
-The compiler is named nowhere here. What `Compiled` means is supplied by whichever extension is
-loaded, and with none loaded it is an error rather than a silent fall back to `inner` — a step
-running a hundred times slower than asked for should say so.
+The compiling lives in an extension. Without `using Reactant` this is an error rather than a
+silent fall back: a step running a hundred times slower than asked for should say so.
 """
-struct Compiled{B}
-    inner::B
-end
-
-"""The differentiation backend behind a `backend`, which for most of them is itself."""
-_ad_backend(backend) = backend
-_ad_backend(c::Compiled) = c.inner
+struct AutoReactant end
 
 """
     NQSCore.clear_compiled_cache!()
@@ -387,21 +386,21 @@ to reclaim that memory, and to force a recompilation after changing a compiler p
 """
 function clear_compiled_cache! end
 
-"""Refuse a `Compiled()` that nothing answered, rather than handing it to DifferentiationInterface."""
+"""Refuse a compiler that nothing answered, rather than pretending none was asked for."""
 _require_compiled(::Any) = nothing
-_require_compiled(::Compiled) = throw(ArgumentError(
-    "this backend asks for a compiled step and no loaded package provides one; " *
-    "`using Reactant` activates NQSCore's"
+_require_compiled(::AutoReactant) = throw(ArgumentError(
+    "compiler=AutoReactant() asks for a compiled step and Reactant is not loaded; " *
+    "`using Reactant` activates NQSCore's extension"
 ))
 
 @doc (@doc compiled_expect)
-compiled_expect_and_grad(vs, operator, states, backend) = nothing
+compiled_expect_and_grad(vs, operator, states, compiler) = nothing
 
 function expect(vs::FullSumState, operator)
     states = samples(vs)
-    got = compiled_expect(vs, operator, states, vs.backend)
+    got = compiled_expect(vs, operator, states, vs.compiler)
     got === nothing || return got
-    _require_compiled(vs.backend)
+    _require_compiled(vs.compiler)
 
     logψ = log_amplitudes(vs, states)
     E = _local_energy(vs, operator, states, logψ)
@@ -411,9 +410,9 @@ end
 function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     states = samples(vs)
     if chunk_size === nothing
-        got = compiled_expect_and_grad(vs, operator, states, vs.backend)
+        got = compiled_expect_and_grad(vs, operator, states, vs.compiler)
         got === nothing || return got
-        _require_compiled(vs.backend)
+        _require_compiled(vs.compiler)
     end
     a, θ = ansatz(vs), parameters(vs)
 
@@ -422,8 +421,7 @@ function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     E = _local_energy(vs, operator, states, logψ)
     p = born_probabilities(logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, p; backend=_ad_backend(vs.backend),
-                        chunk_size=chunk_size)
+    ∇ = energy_gradient(a, θ, x, E, p; backend=vs.backend, chunk_size=chunk_size)
     return weighted_statistics(E, p), ∇
 end
 
@@ -451,7 +449,7 @@ chain resumes instead of restarting. See [`sample`](@ref).
 - `backend`: the DifferentiationInterface backend for [`log_derivatives`](@ref).
 - `rng`: the random source.
 """
-mutable struct MCState{A<:AbstractAnsatz,P,S<:AbstractSampler,B,R<:AbstractRNG,C,T} <:
+mutable struct MCState{A<:AbstractAnsatz,P,S<:AbstractSampler,B,R<:AbstractRNG,C,T,K} <:
                AbstractVariationalState
     ansatz::A
     parameters::P
@@ -461,14 +459,15 @@ mutable struct MCState{A<:AbstractAnsatz,P,S<:AbstractSampler,B,R<:AbstractRNG,C
     samples::C
     sampler_state::T
     stale::Bool
+    compiler::K
 end
 
 function MCState(
     ansatz::AbstractAnsatz, parameters, sampler::AbstractSampler;
-    backend, rng::AbstractRNG=Random.default_rng()
+    backend, rng::AbstractRNG=Random.default_rng(), compiler=nothing
 )
     drawn, state = sample(sampler, ansatz, parameters, rng, nothing)
-    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false)
+    return MCState(ansatz, parameters, sampler, backend, rng, drawn, state, false, compiler)
 end
 
 ansatz(vs::MCState) = vs.ansatz
@@ -512,18 +511,18 @@ end
 
 function expect(vs::MCState, operator)
     states = samples(vs)
-    got = compiled_expect(vs, operator, states, vs.backend)
+    got = compiled_expect(vs, operator, states, vs.compiler)
     got === nothing || return got
-    _require_compiled(vs.backend)
+    _require_compiled(vs.compiler)
     return statistics(local_energy(vs, operator, states))
 end
 
 function expect_and_grad(vs::MCState, operator; chunk_size=nothing)
     states = samples(vs)
     if chunk_size === nothing
-        got = compiled_expect_and_grad(vs, operator, states, vs.backend)
+        got = compiled_expect_and_grad(vs, operator, states, vs.compiler)
         got === nothing || return got
-        _require_compiled(vs.backend)
+        _require_compiled(vs.compiler)
     end
     a, θ = ansatz(vs), parameters(vs)
 
@@ -531,7 +530,6 @@ function expect_and_grad(vs::MCState, operator; chunk_size=nothing)
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, nothing; backend=_ad_backend(vs.backend),
-                        chunk_size=chunk_size)
+    ∇ = energy_gradient(a, θ, x, E, nothing; backend=vs.backend, chunk_size=chunk_size)
     return statistics(reshape(E, size(states))), ∇
 end

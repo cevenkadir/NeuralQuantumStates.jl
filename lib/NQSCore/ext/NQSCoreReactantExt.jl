@@ -27,7 +27,7 @@ module NQSCoreReactantExt
 using ConnectedBasisConfigurations: ConnectedBasisConfigurations, flatten, max_conn_size
 using Enzyme: Enzyme, Const
 using NQSCore
-using NQSCore: Compiled
+using NQSCore: AutoReactant
 using Reactant
 using SymBasis.DigitBase: BaseInt
 
@@ -175,14 +175,14 @@ end
 
 # ------------------------------------------------------------------------------- the seams
 
-function NQSCore.compiled_expect(vs, operator, states, ::Compiled)
+function NQSCore.compiled_expect(vs, operator, states, ::AutoReactant)
     born = vs isa NQSCore.FullSumState
     r = _run(vs, operator, states, born)
     return born ? NQSCore.weighted_statistics(r.E, r.p) :
            NQSCore.statistics(reshape(r.E, size(states)))
 end
 
-function NQSCore.compiled_expect_and_grad(vs, operator, states, ::Compiled)
+function NQSCore.compiled_expect_and_grad(vs, operator, states, ::AutoReactant)
     born = vs isa NQSCore.FullSumState
     r = _run(vs, operator, states, born)
     ∇ = map(Array, r.P.grad(r.a, r.xs, r.c, r.θ_ra))

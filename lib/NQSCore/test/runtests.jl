@@ -321,11 +321,11 @@ end
         end
     end
 
-    @testset "a compiled backend keeps an ordinary one for what it cannot compile" begin
-        # `Compiled` covers `expect` and `expect_and_grad`. `log_derivatives` has no compiled
-        # form — stochastic reconfiguration wants the whole Jacobian, not one contraction of it —
-        # and neither does a chunked gradient. Both must reach the inner backend rather than hand
-        # a compiler to DifferentiationInterface, which is what the first version of this did.
+    @testset "a compiler is a separate choice from a backend" begin
+        # `backend` says which engine differentiates; `compiler` says whether anything compiles.
+        # They were one field once, and that made `expect` and stochastic reconfiguration
+        # disagree about what it meant: `log_derivatives` has no compiled form, so it would have
+        # handed a compiler to DifferentiationInterface.
         spec, nsites = Spin(1 // 2), 4
         H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)
         b = basis(dof_object(spec), nsites)
@@ -333,23 +333,20 @@ end
         θ = init_parameters(a, Xoshiro(0); scale=0.3)
 
         plain = FullSumState(a, θ; backend=BACKEND)
-        compiled = FullSumState(a, θ; backend=Compiled(BACKEND))
+        asked = FullSumState(a, θ; backend=BACKEND, compiler=AutoReactant())
+        @test plain.compiler === nothing
+        @test asked.backend === BACKEND
 
-        @test NQSCore._ad_backend(Compiled(BACKEND)) === BACKEND
-        @test NQSCore._ad_backend(BACKEND) === BACKEND
+        # Nothing provides a compiled step here, so asking for one is an error rather than a
+        # silent hundredfold slowdown.
+        @test_throws ArgumentError expect(asked, H)
+        @test_throws ArgumentError expect_and_grad(asked, H)
 
-        # Nothing provides a compiled step here, so asking for one is an error and not a silent
-        # hundredfold slowdown.
-        @test_throws ArgumentError expect(compiled, H)
-        @test_throws ArgumentError expect_and_grad(compiled, H)
-
-        # But everything with no compiled form goes to the inner backend and matches exactly.
-        x = configurations(spec, b.states, nsites)
-        @test log_derivatives(a, θ, x; backend=NQSCore._ad_backend(compiled.backend),
-                              holomorphic=true) ==
-              log_derivatives(a, θ, x; backend=BACKEND, holomorphic=true)
-        @test last(expect_and_grad(compiled, H; chunk_size=4)) ==
+        # Everything with no compiled form goes on using `backend`, untouched.
+        @test last(expect_and_grad(asked, H; chunk_size=4)) ==
               last(expect_and_grad(plain, H; chunk_size=4))
+        @test local_estimators(asked, H; holomorphic=true).O ==
+              local_estimators(plain, H; holomorphic=true).O
     end
 
     @testset "precision follows the parameters" begin
