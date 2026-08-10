@@ -170,4 +170,59 @@ using KernelAbstractions
         states = basis(dof_object(Spin(1 // 2)), 4).states
         @test via_kernel(moved, states).counts == via_kernel(op, states).counts
     end
+
+    @testset "the kernel runs over raw integers too" begin
+        # XLA tensors carry primitive element types only, and a `BaseInt` array is not one —
+        # `Reactant.to_rarray` hands it back unconverted rather than refusing it. So the kernel
+        # has to be able to run on the integer a `BaseInt` wraps, with the base supplied rather
+        # than read off the type. It is the same kernel either way; this is what says so.
+        ext = Base.get_extension(
+            ConnectedBasisConfigurations, :ConnectedBasisConfigurationsKernelAbstractionsExt
+        )
+
+        @testset "$label" for (label, H, spec, nsites) in models
+            states = basis(dof_object(spec), nsites).states
+            op = flatten(H)
+            h, n = max_conn_size(op), length(states)
+
+            S = eltype(states)
+            V, B = S.parameters[1], S.parameters[3]
+            raw = collect(reinterpret(V, states))
+
+            reference = via_kernel(op, states)
+            raw_configs = Matrix{V}(undef, h, n)
+            raw_mels = Matrix{eltype(op)}(undef, h, n)
+            raw_counts = Vector{Int}(undef, n)
+            connected_padded!(
+                raw_configs, raw_mels, raw_counts, op, raw, backend; base=Val(B)
+            )
+
+            @test raw_counts == reference.counts
+            @test raw_mels == reference.mels
+            # The configurations are the same states, carried as the integer rather than the
+            # wrapper, so the comparison has to strip the wrapper rather than expect one.
+            @test raw_configs == reinterpret(V, reference.configs)
+
+            # And the unpacking, which is the second kernel and the one whose output the network
+            # actually consumes.
+            values = collect(Float64, local_values(spec))
+            raw_x = Matrix{Float64}(undef, nsites, n)
+            configurations!(raw_x, values, raw, nsites, backend; base=Val(B))
+            @test raw_x == Float64.(configurations(spec, states, nsites))
+        end
+
+        @testset "a base is required when the type cannot supply one" begin
+            # Silently guessing base 2 would be wrong for every boson model, so the entry point
+            # refuses rather than defaults.
+            op = flatten(transverse_field_ising(4; J=1.0, h_x=0.7, h_z=0.2))
+            raw = UInt64[0, 1, 2, 3]
+            configs = Matrix{UInt64}(undef, max_conn_size(op), 4)
+            mels = Matrix{eltype(op)}(undef, max_conn_size(op), 4)
+            counts = Vector{Int}(undef, 4)
+            @test_throws ArgumentError connected_padded!(
+                configs, mels, counts, op, raw, backend
+            )
+            @test ext.digit_base(eltype(basis(dof_object(Boson(3)), 2).states)) === Val(4)
+        end
+    end
 end

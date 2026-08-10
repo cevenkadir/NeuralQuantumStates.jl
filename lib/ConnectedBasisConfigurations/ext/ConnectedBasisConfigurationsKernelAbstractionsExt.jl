@@ -25,6 +25,7 @@ using SymBasis.DigitBase: BaseInt
 
 """
     unchecked_read(state, position) -> Int
+    unchecked_read(value, position, Val(base)) -> Int
 
 The digit at `position`, without the bounds checks of the ordinary accessor.
 
@@ -32,37 +33,67 @@ Those checks `throw` with an interpolated message, which cannot be compiled into
 it would allocate a string. They are also unnecessary: positions come from a compiled operator's
 factors and digits from the columns of a `d × d` local matrix, so both are in range by
 construction.
+
+The arithmetic is written on the raw integer and `BaseInt` forwards to it, so the kernel can run
+over either. That matters for XLA, whose tensors carry primitive element types only: a
+`BaseInt` array is not one, and `Reactant.to_rarray` hands it back unconverted rather than
+refusing it. The base travels as a `Val` because a raw integer does not carry it the way
+`BaseInt{V,Ti,B}` does, and it has to be known at compile time for the `ispow2` branch to fold.
 """
-@inline function unchecked_read(state::BaseInt{V,Ti,B}, position::Integer) where {V,Ti,B}
+@inline function unchecked_read(value::V, position::Integer, ::Val{B}) where {V<:Integer,B}
     if ispow2(B)
         bits = trailing_zeros(B)
-        return Int((state.value >> ((position - 1) * bits)) & V(B - 1))
+        return Int((value >> ((position - 1) * bits)) & V(B - 1))
     else
-        return Int(rem(div(state.value, V(B)^(position - 1)), V(B)))
+        return Int(rem(div(value, V(B)^(position - 1)), V(B)))
     end
 end
 
+@inline unchecked_read(state::BaseInt{V,Ti,B}, position::Integer) where {V,Ti,B} =
+    unchecked_read(state.value, position, Val(B))
+@inline unchecked_read(state::BaseInt, position::Integer, ::Val) =
+    unchecked_read(state, position)
+
 """
     unchecked_write(state, position, digit) -> BaseInt
+    unchecked_write(value, position, digit, Val(base)) -> Integer
 
-`state` with `position` set to `digit`. See [`unchecked_read`](@ref) for why it is unchecked.
+`state` with `position` set to `digit`. See [`unchecked_read`](@ref) for why it is unchecked, and
+for why the raw-integer form is the one carrying the arithmetic.
 """
 @inline function unchecked_write(
-    state::BaseInt{V,Ti,B}, position::Integer, digit::Integer
-) where {V,Ti,B}
+    value::V, position::Integer, digit::Integer, ::Val{B}
+) where {V<:Integer,B}
     if ispow2(B)
         bits = trailing_zeros(B)
         shift = (position - 1) * bits
         mask = V(B - 1) << shift
-        return BaseInt{V,Ti,B}((state.value & ~mask) | (V(digit) << shift))
+        return (value & ~mask) | (V(digit) << shift)
     else
         p = V(B)^(position - 1)
-        old = rem(div(state.value, p), V(B))
+        old = rem(div(value, p), V(B))
         # Modular arithmetic: the difference may wrap for an unsigned type, and adding a
         # wrapped difference still lands on the right value.
-        return BaseInt{V,Ti,B}(state.value + (V(digit) - old) * p)
+        return value + (V(digit) - old) * p
     end
 end
+
+@inline unchecked_write(
+    state::BaseInt{V,Ti,B}, position::Integer, digit::Integer
+) where {V,Ti,B} = BaseInt{V,Ti,B}(unchecked_write(state.value, position, digit, Val(B)))
+@inline unchecked_write(state::BaseInt, position::Integer, digit::Integer, ::Val) =
+    unchecked_write(state, position, digit)
+
+"""
+    digit_base(S) -> Val
+
+The base an element type carries, for the entry points that can work it out from the states they
+were handed. A raw integer carries no base, so a caller passing one has to say.
+"""
+digit_base(::Type{BaseInt{V,Ti,B}}) where {V,Ti,B} = Val(B)
+digit_base(::Type{S}) where {S} = throw(ArgumentError(
+    "states of type $S carry no digit base; pass `base=Val(b)` explicitly"
+))
 
 # ------------------------------------------------------------------------------- the kernel
 
@@ -71,7 +102,7 @@ end
     @Const(term_start), @Const(factor_position), @Const(factor_col_start),
     @Const(colptr), @Const(outs), @Const(vals), @Const(states),
     scratch_states, scratch_vals,
-    n_diagonal::Int, n_terms::Int, height::Int,
+    n_diagonal::Int, n_terms::Int, height::Int, base::Val,
 )
     b = @index(Global)
     T = eltype(mels)
@@ -85,7 +116,7 @@ end
             v = one(T)
             alive = true
             for fi in term_start[t]:(term_start[t+1]-1)
-                d = unchecked_read(state, factor_position[fi])
+                d = unchecked_read(state, factor_position[fi], base)
                 cs = factor_col_start[fi]
                 lo = colptr[cs+d]
                 if lo >= colptr[cs+d+1]
@@ -113,10 +144,10 @@ end
                 for j in 1:n
                     s = scratch_states[j, src, b]
                     amp = scratch_vals[j, src, b]
-                    d = unchecked_read(s, pos)
+                    d = unchecked_read(s, pos, base)
                     for p in colptr[cs+d]:(colptr[cs+d+1]-1)
                         m += 1
-                        scratch_states[m, dst, b] = unchecked_write(s, pos, outs[p])
+                        scratch_states[m, dst, b] = unchecked_write(s, pos, outs[p], base)
                         scratch_vals[m, dst, b] = amp * vals[p]
                     end
                 end
@@ -168,15 +199,15 @@ end
 # ------------------------------------------------------------------------- unpacking states
 
 """One thread per entry: `out[i, b]` is the local value of digit `i` of state `b`."""
-@kernel function configurations_kernel!(out, @Const(values), @Const(states))
+@kernel function configurations_kernel!(out, @Const(values), @Const(states), base::Val)
     i, b = @index(Global, NTuple)
-    @inbounds out[i, b] = values[unchecked_read(states[b], i)+1]
+    @inbounds out[i, b] = values[unchecked_read(states[b], i, base)+1]
 end
 
 function ConnectedBasisConfigurations.configurations!(
-    out::AbstractMatrix{T}, values::AbstractVector{T}, states::AbstractArray,
-    nsites::Integer, backend,
-) where {T}
+    out::AbstractMatrix{T}, values::AbstractVector{T}, states::AbstractArray{S},
+    nsites::Integer, backend; base::Val=digit_base(S),
+) where {T,S}
     n = length(states)
     size(out) == (nsites, n) || throw(DimensionMismatch(
         "out is $(size(out)); for $n states of $nsites sites it must be $((Int(nsites), n))"
@@ -184,7 +215,7 @@ function ConnectedBasisConfigurations.configurations!(
     n == 0 && return out
 
     kernel = configurations_kernel!(backend)
-    kernel(out, values, reshape(states, n); ndrange=(Int(nsites), n))
+    kernel(out, values, reshape(states, n), base; ndrange=(Int(nsites), n))
     KernelAbstractions.synchronize(backend)
     return out
 end
@@ -194,7 +225,7 @@ end
 function ConnectedBasisConfigurations.connected_padded!(
     configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
     op::FlatOperator{T}, states::AbstractArray{S}, backend;
-    workgroupsize::Integer=64,
+    base::Val=digit_base(S), workgroupsize::Integer=64,
 ) where {S,T}
     height = op.max_conn
     expected = (height, size(states)...)
@@ -221,7 +252,7 @@ function ConnectedBasisConfigurations.connected_padded!(
         op.term_start, op.factor_position, op.factor_col_start,
         op.colptr, op.outs, op.vals, reshape(states, n),
         scratch_states, scratch_vals,
-        op.n_diagonal, op.n_terms, height;
+        op.n_diagonal, op.n_terms, height, base;
         ndrange=n,
     )
     KernelAbstractions.synchronize(backend)
