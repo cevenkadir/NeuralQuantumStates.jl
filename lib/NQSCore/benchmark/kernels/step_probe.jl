@@ -190,6 +190,14 @@ not needed here at all.
 step_gradient(a, x, c, θ) =
     Enzyme.gradient(Enzyme.Reverse, Const(step_loss), Const(a), Const(x), Const(c), θ)[end]
 
+"""The layer's two halves, so the forward's cost can be attributed rather than guessed at."""
+forward_matmul(W, h, x) = W * x .+ h
+forward_activation(W, h, x) = sum(NQSAnsatze.logtwocosh, W * x .+ h; dims=1)
+# The same shape and the same memory traffic with no transcendentals in it. What separates this
+# from `forward_activation` is what `logtwocosh` costs: a complex `exp` is `exp`, `cos` and `sin`,
+# and the formulation needs two of them plus a complex `log`.
+forward_cheap(W, h, x) = sum(abs2, W * x .+ h; dims=1)
+
 """Compile `f(args...)`, reporting what that cost. `sync=true` is the barrier XLA needs."""
 function compiled(label, f::F, args) where {F}
     t = @elapsed thunk = Reactant.compile(f, args; sync=true)
@@ -251,6 +259,7 @@ let spec = Spin(1 // 2), nsites = NSITES
     println("\nthe step in XLA, three compiled regions")
     t1 = t2 = t3 = nothing
     E_xla = ∇_xla = nothing
+    θ_ra = xs = x_conn = mels = nothing
     try
         # The operator's fields, not the operator. `FlatOperator{T,VI<:AbstractVector{Int32},
         # VT<:AbstractVector{T}}` cannot hold traced arrays at all — `TracedRArray{Int32,1}` has
@@ -287,6 +296,60 @@ let spec = Spin(1 // 2), nsites = NSITES
         ∇_xla = host_gradient(grad(grad_args...))
     catch err
         failed("the XLA step", err, catch_backtrace())
+    end
+
+    # ------------------------------------------------- where the energy region's time goes
+
+    # `energy` is 85% of the XLA step and runs at 1.01x CUDA.jl, so it is the whole question now.
+    # XLA's advantage was never general speed: it was fusing away the per-element pullback
+    # closures Zygote builds for a complex broadcast, and a forward pass has none of those. What
+    # is left is arithmetic, and this section says which arithmetic.
+    println("\nwhat the energy region is made of")
+    W = θ_ra === nothing ? nothing : θ_ra.weight
+    if W !== nothing && x_conn !== nothing
+        for (label, f) in (("matmul and bias only", forward_matmul),
+                           ("+ logtwocosh reduction", forward_activation),
+                           ("+ a reduction with no transcendentals", forward_cheap))
+            try
+                args = (W, θ_ra.hidden, x_conn)
+                thunk = compiled("  $label, compiling (once)", f, args)
+                timed("  $label", () -> thunk(args...))
+            catch err
+                failed("  $label", err, catch_backtrace())
+            end
+        end
+        println("""
+      The gap between the second and the third is what `logtwocosh` costs over 2.6M complex
+      entries. A complex `exp` is an `exp`, a `cos` and a `sin`; the formulation needs two of them
+      and a complex `log`, and this card runs FP64 at about a sixty-fourth of FP32.""")
+    end
+
+    # The one lever with real headroom, and its price. Connected configurations exist to be
+    # summed into a local energy; the parameters and the gradient stay double either way. Whether
+    # that is acceptable is a physics question, so the error is measured rather than argued.
+    println("\nwhat single precision would buy, and cost")
+    if E_xla !== nothing && xs !== nothing
+        try
+            θ32 = Reactant.to_rarray(map(x -> ComplexF32.(Array(x)), θ))
+            xs32 = Reactant.to_rarray(ComplexF32.(Array(xs)))
+            conn32 = Reactant.to_rarray(Float32.(Array(x_conn)))
+            mels32 = Reactant.to_rarray(Float32.(Array(mels)))
+
+            args32 = (a, θ32, xs32, conn32, mels32)
+            thunk32 = compiled("  energy in ComplexF32, compiling (once)", energy_region, args32)
+            t32 = timed("  energy in ComplexF32", () -> thunk32(args32...))
+            t2 === nothing || t32 === nothing ||
+                @printf("  %-46s %11.2fx\n", "  against double precision", t2 / t32)
+
+            E32 = Array(first(thunk32(args32...)))
+            rel = norm(ComplexF64.(E32) .- E_xla) / norm(E_xla)
+            @printf("  %-46s %12.3e\n", "  relative error in the local energies", rel)
+            println("""
+      That error is the whole of the argument against it. Everything else stays double: only the
+      connected-configuration forward and the reduction over it move.""")
+        catch err
+            failed("  single precision", err, catch_backtrace())
+        end
     end
 
     # --------------------------------------------------------------------- the verdict
