@@ -198,7 +198,16 @@ end
 
 # ------------------------------------------------------------------------- unpacking states
 
-"""One thread per entry: `out[i, b]` is the local value of digit `i` of state `b`."""
+"""
+One thread per entry: `out[i, b]` is the local value of digit `i` of state `b`.
+
+`b` indexes `states` linearly, so `states` arrives in whatever shape the caller holds — the
+connected configurations are a `(max_conn, batch)` matrix and are read as `max_conn * batch`
+states without being flattened first. Flattening them *was* how this worked, and it is the one
+thing in the path a compiled region could not take: `reshape` makes a `Base.ReshapedArray`, and
+Reactant's CUDA extension cannot adapt one to a kernel argument. Linear indexing needs no wrapper
+and no reshape, which is both simpler and the only version that traces.
+"""
 @kernel function configurations_kernel!(out, @Const(values), @Const(states), base::Val)
     i, b = @index(Global, NTuple)
     @inbounds out[i, b] = values[unchecked_read(states[b], i, base)+1]
@@ -215,7 +224,7 @@ function ConnectedBasisConfigurations.configurations!(
     n == 0 && return out
 
     kernel = configurations_kernel!(backend)
-    kernel(out, values, reshape(states, n), base; ndrange=(Int(nsites), n))
+    kernel(out, values, states, base; ndrange=(Int(nsites), n))
     KernelAbstractions.synchronize(backend)
     return out
 end

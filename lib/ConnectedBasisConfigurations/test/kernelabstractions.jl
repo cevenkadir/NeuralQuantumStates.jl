@@ -156,6 +156,28 @@ using KernelAbstractions
         end
     end
 
+    @testset "states are indexed linearly, whatever shape they arrive in" begin
+        # Connected configurations reach `configurations!` as a `(max_conn, batch)` matrix and are
+        # read as `max_conn * batch` states. Flattening them first is what a compiled region
+        # cannot take — `reshape` makes a `Base.ReshapedArray`, and Reactant's CUDA extension has
+        # no way to adapt one into a kernel argument — so the kernel indexes linearly instead.
+        # These are the two shapes that have to agree for that to be safe.
+        spec, nsites = Spin(1 // 2), 4
+        op = flatten(transverse_field_ising(nsites; J=1.0, h_x=0.7, h_z=0.2))
+        states = basis(dof_object(spec), nsites).states
+        got = via_kernel(op, states)
+        values = collect(Float64, local_values(spec))
+        h, n = size(got.configs)
+
+        from_matrix = Matrix{Float64}(undef, nsites, h * n)
+        configurations!(from_matrix, values, got.configs, nsites, backend)
+        from_vector = Matrix{Float64}(undef, nsites, h * n)
+        configurations!(from_vector, values, vec(got.configs), nsites, backend)
+
+        @test from_matrix == from_vector
+        @test from_matrix == Float64.(configurations(spec, vec(got.configs), nsites))
+    end
+
     @testset "to_backend moves every array" begin
         op = flatten(transverse_field_ising(4; J=1.0, h_x=0.7, h_z=0.2))
         moved = to_backend(op, backend)
