@@ -190,6 +190,22 @@ not needed here at all.
 step_gradient(a, x, c, θ) =
     Enzyme.gradient(Enzyme.Reverse, Const(step_loss), Const(a), Const(x), Const(c), θ)[end]
 
+"""
+Local energies with only the connected-configuration forward in single precision.
+
+The 53,248-configuration forward is where all the time is; `log ψ(s)`, the matrix elements and the
+reduction are cheap and stay double. Whether that buys back the accuracy the all-single variant
+gives up is the open question, and it may not: an error in `log ψ` propagates to `E` at roughly
+its own relative size, whatever precision the arithmetic around it is carried in.
+"""
+function energy_region_mixed(a, θ, θ32, xs, x_conn32, mels)
+    logψ_s = log_amplitude(a, θ, xs)
+    logψ_sp = reshape(log_amplitude(a, θ32, x_conn32), size(mels))
+    E = vec(sum(mels .* exp.(ComplexF64.(logψ_sp) .- transpose(logψ_s)); dims=1))
+    p = NQSCore.born_probabilities(logψ_s)
+    return E, p, NQSCore._gradient_cotangent(E, p)
+end
+
 """The layer's two halves, so the forward's cost can be attributed rather than guessed at."""
 forward_matmul(W, h, x) = W * x .+ h
 forward_activation(W, h, x) = sum(NQSAnsatze.logtwocosh, W * x .+ h; dims=1)
@@ -344,9 +360,26 @@ let spec = Spin(1 // 2), nsites = NSITES
             E32 = Array(first(thunk32(args32...)))
             rel = norm(ComplexF64.(E32) .- E_xla) / norm(E_xla)
             @printf("  %-46s %12.3e\n", "  relative error in the local energies", rel)
+
+            # The narrower split: only the 53,248-configuration forward moves. Everything the
+            # error could plausibly come from other than `log ψ` itself stays double.
+            mixed_args = (a, θ_ra, θ32, xs, conn32, mels)
+            thunk_m = compiled("  mixed precision, compiling (once)",
+                               energy_region_mixed, mixed_args)
+            tm = timed("  energy, only the connected forward single",
+                       () -> thunk_m(mixed_args...))
+            t2 === nothing || tm === nothing ||
+                @printf("  %-46s %11.2fx\n", "  against double precision", t2 / tm)
+            Em = Array(first(thunk_m(mixed_args...)))
+            relm = norm(Em .- E_xla) / norm(E_xla)
+            @printf("  %-46s %12.3e\n", "  relative error in the local energies", relm)
+
             println("""
-      That error is the whole of the argument against it. Everything else stays double: only the
-      connected-configuration forward and the reduction over it move.""")
+      If the two errors are close, the cost is representing `log ψ` in single precision and not
+      the arithmetic around it — and the narrower split buys nothing worth having. If the mixed
+      one is much smaller, it is the reduction that was losing the digits and the split is worth
+      keeping. Either way the error is the whole of the argument: parameters and the gradient are
+      double in every variant here.""")
         catch err
             failed("  single precision", err, catch_backtrace())
         end
