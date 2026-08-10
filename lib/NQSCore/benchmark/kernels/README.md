@@ -1,9 +1,39 @@
-# Kernel probe
+# Where Reactant and CUDA.jl coexist
 
-Can Reactant run the connected-configuration kernel, and how fast against CUDA.jl?
+The one environment with both. Reactant needs CUDA.jl loaded to lower a KernelAbstractions kernel
+at all, and `../reactant` deliberately excludes it — that environment holds the validated AD
+measurement and adding CUDA would re-resolve it.
 
-This is a decision probe, not a benchmark suite. It answers one question and is meant to be
-deleted once it has.
+Two scripts:
+
+| | |
+|---|---|
+| `kernel_probe.jl` | Can Reactant run the connected-configuration kernel, and how fast against CUDA.jl? **Answered: yes.** 73.6 µs against 30.0 µs, unraised, matching the reference slot for slot. Kept as the record. |
+| `step_probe.jl` | The whole variational step in XLA — three compiled regions — against the same step on CUDA.jl. This is the live one. |
+
+## step_probe.jl
+
+`expect_and_grad` under CUDA.jl is **5.245 ms** on an RTX 5000 Ada: `local_energy` 2.609 ms plus
+`energy_gradient` 2.471 ms, 96.9% between them. Reactant does the gradient alone in 355 µs — seven
+times faster — but only if the connected configurations are already where it can reach them.
+
+Three regions, because the kernel does not raise and so nothing can fuse across it. Nothing forces
+them into one either: only the middle region's output crosses to the gradient.
+
+    prepare   the kernel, then both batches unpacked     (no derivative)
+    energy    two network evaluations, the reduction,
+              the Born weights and the cotangent         (no derivative)
+    gradient  the one region a derivative runs through
+
+**Read the total against ~0.8–1.3 ms**, which is the projection from the gradient's measured 7×
+plus the assumption that the network forward over 53,248 connected configurations goes at a
+similar factor. The `energy` region is where that assumption lives, so it is the line to check if
+the total misses. Both the local energies and the gradient are compared against the CUDA.jl path
+at `1e-8`; a faster wrong answer is not a result.
+
+---
+
+## kernel_probe.jl
 
 ## Why
 

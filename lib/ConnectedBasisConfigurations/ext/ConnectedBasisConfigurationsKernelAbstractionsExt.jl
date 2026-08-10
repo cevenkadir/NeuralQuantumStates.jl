@@ -243,8 +243,12 @@ function ConnectedBasisConfigurations.connected_padded!(
     n == 0 && return (; configs=configs, mels=mels, counts=counts)
 
     width = max(op.max_branch, 1)
-    scratch_states = KernelAbstractions.allocate(backend, S, width, 2, n)
-    scratch_vals = KernelAbstractions.allocate(backend, T, width, 2, n)
+    # `similar(states, ...)` and not `KernelAbstractions.allocate(backend, ...)`. They agree on
+    # every backend KernelAbstractions knows about, and this one also works where the arrays are
+    # traced rather than real — inside a Reactant compiled region, `states` is a tensor being
+    # built and `similar` is how the documented examples ask for another one.
+    scratch_states = similar(states, S, width, 2, n)
+    scratch_vals = similar(mels, T, width, 2, n)
 
     kernel = connected_kernel!(backend, workgroupsize)
     kernel(

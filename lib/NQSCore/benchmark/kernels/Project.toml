@@ -2,12 +2,21 @@
 BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ConnectedBasisConfigurations = "6c9fa4c4-7274-48dc-8e21-1d6a47bf7d9a"
+DifferentiationInterface = "a0c0ee7d-e4b9-4e03-894e-1c5f64a51d63"
+Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+Functors = "d9f16b24-f501-4c13-a1f2-28368ffc5196"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
+NQSAnsatze = "0fa8ea8c-8554-40bd-8978-b36539e7137d"
+NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
 OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
+Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
+cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 
 # CUDA is here on purpose, where ../reactant deliberately excludes it: Reactant needs CUDA.jl
 # loaded to lower a KernelAbstractions kernel at all, which is the whole subject of this probe.
@@ -19,3 +28,5 @@ SymBasis = "0806812d-f945-4f84-939d-820504b53c51"
 
 [sources]
 ConnectedBasisConfigurations = {path = "../../../ConnectedBasisConfigurations"}
+NQSAnsatze = {path = "../../../NQSAnsatze"}
+NQSCore = {path = "../.."}
