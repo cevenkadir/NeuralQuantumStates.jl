@@ -48,6 +48,8 @@ using LinearAlgebra
 using Lux
 using NQSAnsatze
 using NQSCore
+using NQSOptimisers
+using NQSSamplers
 using OperatorAlgebra
 using Printf
 using Random
@@ -421,6 +423,133 @@ let spec = Spin(1 // 2), nsites = NSITES
       configurations goes at a similar factor. The `energy` region is where that assumption
       lives, so it is the line to read if the total misses.""")
     end
+end
+
+# ================================================ the shipped path, both kinds of state
+
+# Everything above builds the compiled regions by hand, which is what proved they work and is
+# still the ground truth. This section asks the *library* instead — `compiler=AutoReactant()` —
+# and does it for both state types, so the two backends can be compared on the code a user runs
+# rather than on a probe's private copy of it.
+#
+# `MCState` is what a production run uses, and it is the reason parameters stay on the host: a
+# sampler evaluates the ansatz once per sweep step, and those calls belong to no compiled region.
+# Both states below therefore hold ordinary arrays for the XLA path, and CUDA arrays for the
+# CUDA.jl one, exactly as a caller would.
+
+const N_CHAINS, N_SAMPLES, BURN_IN = 8, 200, 50
+
+println("\n", "="^78)
+println("the shipped path: expect_and_grad through the library, both state types")
+println("="^78)
+
+let spec = Spin(1 // 2), nsites = NSITES
+    b = basis(dof_object(spec), nsites)
+    H = compile(tfi(nsites; h_x=0.9, h_z=0.1))
+    a = LuxAnsatz(RBM(nsites, ALPHA), spec, nsites; rng=Xoshiro(0))
+    θ = init_parameters(a, Xoshiro(0))
+
+    starts = random_configurations(spec, nsites, N_CHAINS, Xoshiro(1))
+    sampler = MetropolisSampler(LocalRule(), starts;
+        n_chains=N_CHAINS, n_samples=N_SAMPLES, burn_in=BURN_IN)
+    @printf("  %-46s %12d\n", "FullSumState batch", length(b.states))
+    @printf("  %-46s %12d\n", "MCState batch", N_CHAINS * N_SAMPLES)
+
+    θ_gpu = CUDA.functional() ? fmap(CuArray, θ) : nothing
+    results = Dict{String,Any}()
+
+    for (kind, build) in (
+        ("FullSumState", (θ_, c) -> FullSumState(a, θ_; backend=AutoZygote(), basis=b, compiler=c)),
+        ("MCState", (θ_, c) -> MCState(a, θ_, sampler; backend=AutoZygote(), rng=Xoshiro(3),
+                                       compiler=c)),
+    )
+        println("\n  ", kind)
+
+        # CUDA.jl with Zygote: parameters on the device, no compiler.
+        if θ_gpu !== nothing
+            try
+                vs = build(θ_gpu, nothing)
+                t = timed("    CUDA.jl + Zygote", () -> CUDA.@sync expect_and_grad(vs, H))
+                t === nothing || (results["$kind|cuda"] = t)
+                results["$kind|cuda_E"] = real(first(expect_and_grad(vs, H)).mean)
+            catch err
+                failed("    $kind on CUDA.jl", err, catch_backtrace())
+            end
+        end
+
+        # Reactant with Enzyme, through the extension: host parameters, a compiler.
+        try
+            vs = build(θ, AutoReactant())
+            t0 = @elapsed expect_and_grad(vs, H)          # compiles the regions for this shape
+            report("    Reactant, compiling (once)", t0)
+            t = timed("    Reactant + Enzyme", () -> expect_and_grad(vs, H))
+            t === nothing || (results["$kind|xla"] = t)
+            results["$kind|xla_E"] = real(first(expect_and_grad(vs, H)).mean)
+        catch err
+            failed("    $kind through the extension", err, catch_backtrace())
+        end
+
+        c, x = get(results, "$kind|cuda", nothing), get(results, "$kind|xla", nothing)
+        c === nothing || x === nothing ||
+            @printf("  %-46s %11.2fx\n", "    Reactant against CUDA.jl", c / x)
+        ec, ex = get(results, "$kind|cuda_E", nothing), get(results, "$kind|xla_E", nothing)
+        if ec !== nothing && ex !== nothing
+            rel = abs(ex - ec) / abs(ec)
+            @printf("  %-46s %12.3e %s\n", "    energies agree", rel,
+                    rel <= 1e-8 ? "" : "DISAGREE")
+            rel <= 1e-8 || push!(FAILURES, "$kind: XLA and CUDA.jl energies disagree")
+        end
+    end
+
+    println("""
+      A `MCState` energy is a Monte Carlo estimate, so the two paths agree only because they are
+      given the same seed and therefore the same samples — the sampler runs on the host for the
+      compiled path and on the device for the other, and takes the same decisions either way.""")
+
+    # ------------------------------------------------------- stochastic reconfiguration
+
+    # SR has no compiled form and this section is here to say what that costs rather than to
+    # leave it implicit. `precondition` goes through `local_estimators`, which builds the whole
+    # log-derivative matrix with `log_derivatives` — the Jacobian, not the one contraction of it
+    # that `expect_and_grad` needs — and that reads `backend`, never `compiler`. So the column
+    # below is Zygote either way, and the only thing `compiler=AutoReactant()` changes is where
+    # the parameters happen to live.
+    #
+    # The gap is worth a number: whatever SR costs against `expect_and_grad` is what a fourth
+    # compiled region would be worth, and whether it is worth building.
+    println("\n  stochastic reconfiguration")
+    sr = StochasticReconfiguration(; diag_shift=1e-2, solver=ConjugateGradientSolver())
+    for (kind, build) in (
+        ("FullSumState", (θ_, c) -> FullSumState(a, θ_; backend=AutoZygote(), basis=b, compiler=c)),
+        ("MCState", (θ_, c) -> MCState(a, θ_, sampler; backend=AutoZygote(), rng=Xoshiro(3),
+                                       compiler=c)),
+    )
+        if θ_gpu !== nothing
+            try
+                vs = build(θ_gpu, nothing)
+                timed("    $kind, O only, CUDA.jl",
+                      () -> CUDA.@sync NQSCore.local_estimators(vs, H))
+                t = timed("    $kind, whole SR step, CUDA.jl",
+                          () -> CUDA.@sync precondition(sr, vs, H))
+                g = get(results, "$kind|cuda", nothing)
+                t === nothing || g === nothing ||
+                    @printf("  %-46s %11.2fx\n", "      against its own expect_and_grad", t / g)
+            catch err
+                failed("    $kind SR on CUDA.jl", err, catch_backtrace())
+            end
+        end
+        try
+            vs = build(θ, AutoReactant())
+            timed("    $kind, whole SR step, host Zygote", () -> precondition(sr, vs, H))
+        catch err
+            failed("    $kind SR with a compiler asked for", err, catch_backtrace())
+        end
+    end
+    println("""
+      The last line of each pair is what `compiler=AutoReactant()` does for SR today: nothing.
+      Parameters stay on the host, `log_derivatives` uses `backend`, and the whole step runs
+      there. A compiled SR would need a fourth region building the Jacobian, and the ratio above
+      says what that would be worth.""")
 end
 
 println()

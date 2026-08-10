@@ -771,9 +771,70 @@ let spec = Spin(1 // 2), nsites = NSITES
                   () -> CUDA.@sync expect(
                       MCState(a, θ_gpu, sampler; backend=BACKEND, rng=Xoshiro(3)), H))
     compare("speedup", m_cpu, m_gpu)
+
+    # The gradient too, because that is what an optimization step actually costs and it is the
+    # number `../kernels` compares against. Built once and reused: constructing an `MCState`
+    # draws samples, and timing that together with the gradient would measure the sampler.
+    let vs_h = MCState(a, θ_cpu, sampler; backend=BACKEND, rng=Xoshiro(3)),
+        vs_d = MCState(a, θ_gpu, sampler; backend=BACKEND, rng=Xoshiro(3))
+
+        g_h = timed("MCState expect_and_grad, host (Zygote)", () -> expect_and_grad(vs_h, H))
+        g_d = timed("MCState expect_and_grad, device (Zygote)",
+                    () -> CUDA.@sync expect_and_grad(vs_d, H))
+        compare("speedup", g_h, g_d)
+        @printf("  %-46s %12d\n", "samples behind those two", length(samples(vs_d)))
+        println("""
+      `../kernels` runs this same state and this same sampler through `compiler=AutoReactant()`,
+      so the device number above is what the XLA one is to be read against. The batch is smaller
+      than the FullSumState one — a sampled step is not a summed one — so the two kinds of state
+      are not comparable with each other, only each with its own counterpart.""")
+    end
 end
 
 # ================================================= the linear algebra behind the SR solve
+
+# The whole SR step on the real states, which the synthetic section below does not cover: that
+# one times the linear algebra at a chosen size, and this one times what a run actually pays,
+# most of which is building the log-derivative matrix rather than solving with it.
+println("\nstochastic reconfiguration, the whole step")
+let spec = Spin(1 // 2), nsites = NSITES
+    b = basis(dof_object(spec), nsites)
+    H = compile(tfi(nsites; h_x=0.9, h_z=0.1))
+    a = LuxAnsatz(RBM(nsites, ALPHA), spec, nsites; rng=Xoshiro(0))
+    θ_cpu = init_parameters(a, Xoshiro(0))
+    starts = random_configurations(spec, nsites, 8, Xoshiro(1))
+    sampler = MetropolisSampler(LocalRule(), starts; n_chains=8, n_samples=200, burn_in=50)
+    sr = StochasticReconfiguration(; diag_shift=1e-2, solver=ConjugateGradientSolver())
+
+    for (kind, build) in (
+        ("FullSumState", θ_ -> FullSumState(a, θ_; backend=BACKEND, basis=b)),
+        ("MCState", θ_ -> MCState(a, θ_, sampler; backend=BACKEND, rng=Xoshiro(3))),
+    )
+        vs_h = build(θ_cpu)
+        h_O = timed("$kind, O only, host", () -> NQSCore.local_estimators(vs_h, H))
+        h_all = timed("$kind, whole SR step, host", () -> precondition(sr, vs_h, H))
+        d_O = d_all = nothing
+        try
+            vs_d = build(fmap(CuArray, θ_cpu))
+            d_O = timed("$kind, O only, CUDA",
+                        () -> CUDA.@sync NQSCore.local_estimators(vs_d, H))
+            d_all = timed("$kind, whole SR step, CUDA",
+                          () -> CUDA.@sync precondition(sr, vs_d, H))
+        catch err
+            println("      the device SR failed:")
+            failed("$kind SR on the device", err)
+        end
+        compare("  O only: speedup", h_O, d_O)
+        compare("  whole step: speedup", h_all, d_all)
+        d_O === nothing || d_all === nothing ||
+            @printf("  %-46s %11.1f%%\n", "  building O, of the whole step", 100 * d_O / d_all)
+    end
+    println("""
+      `../kernels` runs these same two states through `compiler=AutoReactant()` and gets the same
+      numbers, because SR has no compiled form: `log_derivatives` builds the whole Jacobian and
+      reads `backend`, never `compiler`. The percentage above is what a fourth compiled region
+      would have to attack.""")
+end
 
 println("\nstochastic reconfiguration, solve only")
 let n = 2048, p = 4096

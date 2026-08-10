@@ -10,6 +10,8 @@ LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Lux = "b2108857-7c20-44ae-9111-449ecde12c47"
 NQSAnsatze = "0fa8ea8c-8554-40bd-8978-b36539e7137d"
 NQSCore = "fbe4a4b0-3225-4c12-93a0-7b97ae7aa121"
+NQSOptimisers = "e6f1cb06-4e28-4e31-bf31-96dd4dd6e02d"
+NQSSamplers = "8197fea4-252d-4314-8d17-f953e3c380bc"
 OperatorAlgebra = "49087e99-997d-48ed-8945-d57b707c274b"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -30,3 +32,5 @@ cuDNN = "02a925ec-e4fe-4b08-9a7e-0d78e3d38ccd"
 ConnectedBasisConfigurations = {path = "../../../ConnectedBasisConfigurations"}
 NQSAnsatze = {path = "../../../NQSAnsatze"}
 NQSCore = {path = "../.."}
+NQSOptimisers = {path = "../../../NQSOptimisers"}
+NQSSamplers = {path = "../../../NQSSamplers"}

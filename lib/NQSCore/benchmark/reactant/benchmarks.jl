@@ -52,6 +52,7 @@ using LinearAlgebra
 using Lux
 using NQSAnsatze
 using NQSCore
+using NQSSamplers
 using OperatorAlgebra
 using Printf
 using Random
@@ -519,7 +520,23 @@ let spec = Spin(1 // 2), nsites = NSITES
     println("\nend to end, through DifferentiationInterface")
     for (engine, backend) in (("Zygote", AutoZygote()), ("Enzyme", AutoEnzyme()))
         state = FullSumState(a, θ; backend=backend, basis=b)
-        timed("expect_and_grad, $engine", () -> expect_and_grad(state, H))
+        timed("expect_and_grad, FullSumState ($engine)", () -> expect_and_grad(state, H))
+    end
+    # The state a production run uses. Its batch is smaller than the full sum's, so this is not
+    # comparable with the line above — only with its own counterpart in ../gpu and ../kernels,
+    # which build the same sampler with the same seed.
+    let starts = random_configurations(spec, nsites, 8, Xoshiro(1)),
+        sampler = MetropolisSampler(LocalRule(), starts;
+            n_chains=8, n_samples=200, burn_in=50)
+
+        for (engine, backend) in (("Zygote", AutoZygote()), ("Enzyme", AutoEnzyme()))
+            try
+                mc = MCState(a, θ, sampler; backend=backend, rng=Xoshiro(3))
+                timed("expect_and_grad, MCState ($engine)", () -> expect_and_grad(mc, H))
+            catch err
+                failed("expect_and_grad, MCState ($engine)", err)
+            end
+        end
     end
     timed("expect (no derivative)", () -> expect(vs, H))
     timed("local_energy alone", () -> NQSCore.local_energy(vs, H, b.states))
