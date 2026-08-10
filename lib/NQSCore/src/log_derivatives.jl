@@ -109,7 +109,7 @@ function _log_derivatives(
         return vcat(real.(ψ), imag.(ψ))
     end
     J = DifferentiationInterface.jacobian(stacked, backend, flat)
-    return @views J[1:batch, :] .+ im .* J[(batch+1):(2batch), :]
+    return @views complex.(J[1:batch, :], J[(batch+1):(2batch), :])
 end
 
 """Complex parameters: differentiate with respect to the real and imaginary parts separately."""
@@ -120,8 +120,12 @@ function _log_derivatives(
     n = length(flat)
     split = vcat(real.(flat), imag.(flat))
 
+    # `complex.(re, im)` rather than `re .+ im .* im_part`. The two are the same number, but `im`
+    # is `Complex{Bool}`, which is not an element type XLA has — Reactant rejects it outright, and
+    # the reparameterization is the first thing a compiled gradient meets. Nothing else changes:
+    # both halves are real here by construction, being `real.(flat)` and `imag.(flat)`.
     function stacked(v)
-        p = @views v[1:n] .+ im .* v[(n+1):(2n)]
+        p = @views complex.(v[1:n], v[(n+1):(2n)])
         ψ = log_amplitude(ansatz, restore(p), x)
         return vcat(real.(ψ), imag.(ψ))
     end
@@ -130,13 +134,13 @@ function _log_derivatives(
     # Blocks of ∂(re ψ, im ψ) / ∂(re θ, im θ).
     ∂reψ_∂reθ = @view J[1:batch, 1:n]
     ∂imψ_∂reθ = @view J[(batch+1):(2batch), 1:n]
-    O_re = ∂reψ_∂reθ .+ im .* ∂imψ_∂reθ
+    O_re = complex.(∂reψ_∂reθ, ∂imψ_∂reθ)
 
     holomorphic && return O_re
 
     ∂reψ_∂imθ = @view J[1:batch, (n+1):(2n)]
     ∂imψ_∂imθ = @view J[(batch+1):(2batch), (n+1):(2n)]
-    O_im = ∂reψ_∂imθ .+ im .* ∂imψ_∂imθ
+    O_im = complex.(∂reψ_∂imθ, ∂imψ_∂imθ)
     return hcat(O_re, O_im)
 end
 
@@ -162,7 +166,7 @@ match_parameter_shape(∇::AbstractVector, θ) =
 function match_parameter_shape(∇::AbstractVector, flat::AbstractVector, restore::R) where {R}
     n = length(flat)
     if eltype(flat) <: Complex && length(∇) == 2n
-        return restore(@views ∇[1:n] .+ im .* ∇[(n+1):(2n)])
+        return restore(@views complex.(∇[1:n], ∇[(n+1):(2n)]))
     end
     return restore(∇)
 end
@@ -239,7 +243,7 @@ function _energy_gradient(
     n = length(flat)
     split = vcat(real.(flat), imag.(flat))
     function loss(v)
-        p = @views v[1:n] .+ im .* v[(n+1):(2n)]
+        p = @views complex.(v[1:n], v[(n+1):(2n)])
         return _gradient_loss(ansatz, restore(p), x, c)
     end
     return DifferentiationInterface.gradient(loss, backend, split)

@@ -122,7 +122,7 @@ function _as_log_amplitude(y::AbstractMatrix)
         return vec(y)
     elseif size(y, 1) == 2
         # A real network encoding a complex wavefunction: modulus and phase in two rows.
-        return @views y[1, :] .+ im .* y[2, :]
+        return @views complex.(y[1, :], y[2, :])
     end
     throw(ArgumentError(
         "an ansatz model must return 1 or 2 rows, got $(size(y, 1)); a single row is a " *
