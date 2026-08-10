@@ -320,6 +320,41 @@ end
         end
     end
 
+    @testset "precision follows the parameters" begin
+        # Choosing single precision is choosing it for the arithmetic, and the whole device seam
+        # is built on the rule that what a batch is and where it lives follow the parameters. The
+        # matrix elements were the one array that did not: `local_operators` builds them
+        # `Float64`, and a `Float64` array meeting a `ComplexF32` one promoted the reduction, so
+        # `local_energy`, the cotangent and `expect` all came back double for a single-precision
+        # ansatz — silently overriding the choice.
+        spec, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)
+        b = basis(dof_object(spec), nsites)
+
+        @testset "$T" for T in (ComplexF64, ComplexF32)
+            a = LogStateVector(spec, nsites, b)
+            θ = T.(init_parameters(a, Xoshiro(0); scale=0.3))
+            vs = FullSumState(a, θ; backend=BACKEND)
+
+            logψ = log_amplitude(a, θ, configurations(spec, b.states, nsites))
+            E = local_energy(vs, H, b.states)
+            p = NQSCore.born_probabilities(logψ)
+
+            @test eltype(E) === T
+            @test eltype(NQSCore._gradient_cotangent(E, p)) === T
+            @test typeof(expect(vs, H).mean) === T
+        end
+
+        @testset "the two precisions agree to single precision" begin
+            # The point of the narrowing is speed, not a different answer.
+            a = LogStateVector(spec, nsites, b)
+            θ = init_parameters(a, Xoshiro(0); scale=0.3)
+            e64 = expect(FullSumState(a, θ; backend=BACKEND), H).mean
+            e32 = expect(FullSumState(a, ComplexF32.(θ); backend=BACKEND), H).mean
+            @test real(e32) ≈ real(e64) rtol = 1e-5
+        end
+    end
+
     @testset "FullSumState is exact" begin
         spec, nsites = Spin(1 // 2),4
         H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)

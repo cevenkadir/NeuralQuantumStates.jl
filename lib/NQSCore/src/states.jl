@@ -144,8 +144,27 @@ function _local_energy(
     # The whole column reduces without a mask because the padding is inert: a padded slot
     # repeats the sample with a zero matrix element, giving `0 * exp(0)` and never `0 * Inf`.
     # Having no data-dependent trip count is also what lets this line run on a GPU array.
-    m = _colocate(logψ_sp, mels)
+    m = _colocate(logψ_sp, _matching_precision(logψ_sp, mels))
     return vec(sum(m .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
+end
+
+"""
+`mels` in the precision the ansatz works in, keeping whether it is real or complex.
+
+Everything else in this reduction follows the parameters, which is the rule the whole device seam
+is built on. The matrix elements were the exception: `local_operators` builds them `Float64`
+whatever the network is, and a `Float64` array meeting a `ComplexF32` one promotes the reduction —
+so `local_energy`, the cotangent and `expect` all came back double for a single-precision ansatz,
+quietly overriding the precision the user asked for.
+
+Narrowing an operator's coefficients is the right way round. A user who chose single precision
+chose it for the arithmetic these coefficients take part in, and a coefficient carries no more
+meaning at `Float64` than the amplitudes it multiplies.
+"""
+function _matching_precision(like::AbstractArray, mels::AbstractArray)
+    P = real(eltype(like))
+    T = eltype(mels) <: Complex ? Complex{P} : P
+    return eltype(mels) === T ? mels : T.(mels)
 end
 
 """
