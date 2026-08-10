@@ -53,6 +53,7 @@ using Printf
 using Random
 using Reactant
 using SymBasis
+using Zygote   # AutoZygote() is inert until DifferentiationInterface sees it
 using cuDNN
 
 let requested = get(ENV, "NQS_REACTANT_BACKEND", "")
@@ -240,7 +241,16 @@ let spec = Spin(1 // 2), nsites = NSITES
     t1 = t2 = t3 = nothing
     E_xla = ∇_xla = nothing
     try
-        op_ra = Reactant.to_rarray(op)
+        # The operator's fields, not the operator. `FlatOperator{T,VI<:AbstractVector{Int32},
+        # VT<:AbstractVector{T}}` cannot hold traced arrays at all — `TracedRArray{Int32,1}` has
+        # element type `TracedRNumber{Int32}`, so it is not an `AbstractVector{Int32}` — and a
+        # `NamedTuple` of the same fields carries everything the kernel reads. The `Int` fields
+        # stay `Int`: `to_rarray` leaves plain numbers alone unless asked to track them.
+        op_ra = Reactant.to_rarray((;
+            op.term_start, op.factor_position, op.factor_col_start,
+            op.colptr, op.outs, op.vals,
+            op.n_diagonal, op.n_terms, op.max_conn, op.max_branch,
+        ))
         states_ra = Reactant.to_rarray(collect(reinterpret(V, states)))
         values_real = Reactant.to_rarray(collect(Float64, local_values(spec)))
         values_complex = Reactant.to_rarray(collect(ComplexF64, local_values(spec)))

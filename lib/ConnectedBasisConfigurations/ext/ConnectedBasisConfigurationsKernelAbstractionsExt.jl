@@ -205,9 +205,9 @@ end
 end
 
 function ConnectedBasisConfigurations.configurations!(
-    out::AbstractMatrix{T}, values::AbstractVector{T}, states::AbstractArray{S},
+    out::AbstractMatrix, values::AbstractVector, states::AbstractArray{S},
     nsites::Integer, backend; base::Val=digit_base(S),
-) where {T,S}
+) where {S}
     n = length(states)
     size(out) == (nsites, n) || throw(DimensionMismatch(
         "out is $(size(out)); for $n states of $nsites sites it must be $((Int(nsites), n))"
@@ -222,11 +222,23 @@ end
 
 # ---------------------------------------------------------------------------- entry points
 
+"""
+`op` may be a [`FlatOperator`](@ref) or a `NamedTuple` carrying the same fields, and the element
+types are left open, because a compiled region can hold neither the struct nor the eltypes.
+
+`FlatOperator{T,VI<:AbstractVector{Int32},VT<:AbstractVector{T}}` rejects a traced array outright:
+`TracedRArray{Int32,1}` has element type `TracedRNumber{Int32}`, so it is not an
+`AbstractVector{Int32}`. `Int` and `T` on `counts` and `mels` fail the same way. None of it is
+load-bearing here — this launches a kernel, and the kernel reads fields and writes slots — so the
+signature asks for the shape it checks and nothing more. The operator's own type keeps its
+guarantees for everyone who builds and inspects one.
+"""
 function ConnectedBasisConfigurations.connected_padded!(
-    configs::AbstractArray{S}, mels::AbstractArray{T}, counts::AbstractArray{Int},
-    op::FlatOperator{T}, states::AbstractArray{S}, backend;
+    configs::AbstractArray{S}, mels::AbstractArray, counts::AbstractArray,
+    op::Union{FlatOperator,NamedTuple}, states::AbstractArray{S}, backend;
     base::Val=digit_base(S), workgroupsize::Integer=64,
-) where {S,T}
+) where {S}
+    T = eltype(op.vals)
     height = op.max_conn
     expected = (height, size(states)...)
     size(configs) == expected || throw(DimensionMismatch(
