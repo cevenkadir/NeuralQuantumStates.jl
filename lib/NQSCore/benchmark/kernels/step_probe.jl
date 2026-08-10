@@ -85,7 +85,7 @@ note(label, what) = @printf("  %-46s %12s\n", label, what)
 
 const FAILURES = String[]
 
-function failed(what, err)
+function failed(what, err, bt=nothing)
     text = sprint(showerror, err)
     lines = split(text, '\n')
     push!(FAILURES, "$what: $(first(lines))")
@@ -94,6 +94,17 @@ function failed(what, err)
         println("      ", length(l) > 300 ? l[1:prevind(l, 300)] * " …" : l)
     end
     length(lines) > 8 && println("      … ", length(lines) - 8, " more lines")
+    # The frames, because a failure inside a compiler's own internals says nothing about which
+    # operation reached it. `UndefVarError: _derived_array not defined in ReactantCUDAExt` is not
+    # a message anything here can act on; the frame below it is.
+    if bt !== nothing
+        frames = stacktrace(bt)
+        println("      where:")
+        for f in first(frames, 15)
+            println("        ", f)
+        end
+        length(frames) > 15 && println("        … ", length(frames) - 15, " more frames")
+    end
     return nothing
 end
 
@@ -104,7 +115,7 @@ function timed(label, f)
         report(label, t)
         return t
     catch err
-        failed(strip(label), err)
+        failed(strip(label), err, catch_backtrace())
         return nothing
     end
 end
@@ -232,7 +243,7 @@ let spec = Spin(1 // 2), nsites = NSITES
         ∇_cuda = host_gradient(NQSCore.energy_gradient(
             a, θ_gpu, xs_gpu, E_g, p_g; backend=AutoZygote()))
     catch err
-        failed("the CUDA.jl baseline", err)
+        failed("the CUDA.jl baseline", err, catch_backtrace())
     end
 
     # ------------------------------------------------------------- the step in XLA
@@ -275,7 +286,7 @@ let spec = Spin(1 // 2), nsites = NSITES
         t3 = timed("gradient", () -> grad(grad_args...))
         ∇_xla = host_gradient(grad(grad_args...))
     catch err
-        failed("the XLA step", err)
+        failed("the XLA step", err, catch_backtrace())
     end
 
     # --------------------------------------------------------------------- the verdict
