@@ -249,7 +249,8 @@ function local_estimators(
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
     O = log_derivatives(
-        a, θ, x; backend=vs.backend, holomorphic=holomorphic, chunk_size=chunk_size
+        a, θ, x; backend=_ad_backend(vs.backend), holomorphic=holomorphic,
+        chunk_size=chunk_size
     )
 
     return (; E=E, O=O, weights=sample_weights(vs, logψ))
@@ -349,15 +350,31 @@ what crosses to the compiler is whatever a step needs, per step.
 compiled_expect(vs, operator, states, backend) = nothing
 
 """
-    Compiled()
+    Compiled(inner)
 
-Ask for a step computed by a compiler rather than operation by operation.
+Ask for a step computed by a compiler, with `inner` for everything that has no compiled form.
 
-Passed as a state's `backend` in place of an ADTypes object. It names no compiler: what it means
-is supplied by whichever extension is loaded, and with none loaded it is an error rather than a
-silent fall back to a differentiation backend that was never chosen.
+Passed as a state's `backend`: `Compiled(AutoZygote())` means *compile `expect` and
+`expect_and_grad`, and differentiate with Zygote everywhere else*. It is not an
+`ADTypes` backend and does not pretend to be one — a compiler is not an answer to "which
+automatic-differentiation engine", which is what that field otherwise carries.
+
+`inner` is not a formality. [`log_derivatives`](@ref) has no compiled region — stochastic
+reconfiguration wants the whole Jacobian, not one contraction of it — and neither does a
+`chunk_size`d gradient, whose point is to bound the memory of a pass the compiled region takes in
+one. Both go to `inner`, so choosing a compiled step costs nothing elsewhere.
+
+The compiler is named nowhere here. What `Compiled` means is supplied by whichever extension is
+loaded, and with none loaded it is an error rather than a silent fall back to `inner` — a step
+running a hundred times slower than asked for should say so.
 """
-struct Compiled end
+struct Compiled{B}
+    inner::B
+end
+
+"""The differentiation backend behind a `backend`, which for most of them is itself."""
+_ad_backend(backend) = backend
+_ad_backend(c::Compiled) = c.inner
 
 """
     NQSCore.clear_compiled_cache!()
@@ -373,7 +390,7 @@ function clear_compiled_cache! end
 """Refuse a `Compiled()` that nothing answered, rather than handing it to DifferentiationInterface."""
 _require_compiled(::Any) = nothing
 _require_compiled(::Compiled) = throw(ArgumentError(
-    "backend=Compiled() asks for a compiled step and no loaded package provides one; " *
+    "this backend asks for a compiled step and no loaded package provides one; " *
     "`using Reactant` activates NQSCore's"
 ))
 
@@ -396,8 +413,8 @@ function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     if chunk_size === nothing
         got = compiled_expect_and_grad(vs, operator, states, vs.backend)
         got === nothing || return got
+        _require_compiled(vs.backend)
     end
-    _require_compiled(vs.backend)
     a, θ = ansatz(vs), parameters(vs)
 
     x = configurations_of(vs, states)
@@ -405,7 +422,8 @@ function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     E = _local_energy(vs, operator, states, logψ)
     p = born_probabilities(logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, p; backend=vs.backend, chunk_size=chunk_size)
+    ∇ = energy_gradient(a, θ, x, E, p; backend=_ad_backend(vs.backend),
+                        chunk_size=chunk_size)
     return weighted_statistics(E, p), ∇
 end
 
@@ -505,14 +523,15 @@ function expect_and_grad(vs::MCState, operator; chunk_size=nothing)
     if chunk_size === nothing
         got = compiled_expect_and_grad(vs, operator, states, vs.backend)
         got === nothing || return got
+        _require_compiled(vs.backend)
     end
-    _require_compiled(vs.backend)
     a, θ = ansatz(vs), parameters(vs)
 
     x = configurations_of(vs, states)
     logψ = log_amplitude(a, θ, x)
     E = _local_energy(vs, operator, vec(states), logψ)
 
-    ∇ = energy_gradient(a, θ, x, E, nothing; backend=vs.backend, chunk_size=chunk_size)
+    ∇ = energy_gradient(a, θ, x, E, nothing; backend=_ad_backend(vs.backend),
+                        chunk_size=chunk_size)
     return statistics(reshape(E, size(states))), ∇
 end

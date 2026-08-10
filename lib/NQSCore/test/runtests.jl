@@ -321,6 +321,37 @@ end
         end
     end
 
+    @testset "a compiled backend keeps an ordinary one for what it cannot compile" begin
+        # `Compiled` covers `expect` and `expect_and_grad`. `log_derivatives` has no compiled
+        # form — stochastic reconfiguration wants the whole Jacobian, not one contraction of it —
+        # and neither does a chunked gradient. Both must reach the inner backend rather than hand
+        # a compiler to DifferentiationInterface, which is what the first version of this did.
+        spec, nsites = Spin(1 // 2), 4
+        H = tfi(nsites; J=1.0, h_x=0.7, h_z=0.2)
+        b = basis(dof_object(spec), nsites)
+        a = LogStateVector(spec, nsites, b)
+        θ = init_parameters(a, Xoshiro(0); scale=0.3)
+
+        plain = FullSumState(a, θ; backend=BACKEND)
+        compiled = FullSumState(a, θ; backend=Compiled(BACKEND))
+
+        @test NQSCore._ad_backend(Compiled(BACKEND)) === BACKEND
+        @test NQSCore._ad_backend(BACKEND) === BACKEND
+
+        # Nothing provides a compiled step here, so asking for one is an error and not a silent
+        # hundredfold slowdown.
+        @test_throws ArgumentError expect(compiled, H)
+        @test_throws ArgumentError expect_and_grad(compiled, H)
+
+        # But everything with no compiled form goes to the inner backend and matches exactly.
+        x = configurations(spec, b.states, nsites)
+        @test log_derivatives(a, θ, x; backend=NQSCore._ad_backend(compiled.backend),
+                              holomorphic=true) ==
+              log_derivatives(a, θ, x; backend=BACKEND, holomorphic=true)
+        @test last(expect_and_grad(compiled, H; chunk_size=4)) ==
+              last(expect_and_grad(plain, H; chunk_size=4))
+    end
+
     @testset "precision follows the parameters" begin
         # Choosing single precision is choosing it for the arithmetic, and the whole device seam
         # is built on the rule that what a batch is and where it lives follow the parameters. The
