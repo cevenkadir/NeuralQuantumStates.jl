@@ -330,8 +330,62 @@ The exact Born probabilities `|ψ(s)|² / Σ|ψ|²` over the whole basis.
 """
 probabilities(vs::FullSumState) = born_probabilities(log_amplitudes(vs, samples(vs)))
 
+"""
+    compiled_expect(state, operator, states, backend)
+    compiled_expect_and_grad(state, operator, states, backend)
+
+A whole step computed by something that compiles it, or `nothing` to say there is no such thing.
+
+Both return `nothing` here, and an extension gives its backend a method. `nothing` is a singleton,
+so the branch these sit behind folds away for every backend that does not have one — the same
+property [`device_backend`](@ref) relies on, and checked the same way.
+
+Dispatch is on the *backend*, not on the parameters. A compiled path could equally be selected by
+holding parameters in its own array type, and that would work for [`FullSumState`](@ref) and break
+[`MCState`](@ref): a sampler evaluates the ansatz once per sweep step, and those calls are not
+part of any compiled region. Parameters stay ordinary arrays, the sampler stays untouched, and
+what crosses to the compiler is whatever a step needs, per step.
+"""
+compiled_expect(vs, operator, states, backend) = nothing
+
+"""
+    Compiled()
+
+Ask for a step computed by a compiler rather than operation by operation.
+
+Passed as a state's `backend` in place of an ADTypes object. It names no compiler: what it means
+is supplied by whichever extension is loaded, and with none loaded it is an error rather than a
+silent fall back to a differentiation backend that was never chosen.
+"""
+struct Compiled end
+
+"""
+    NQSCore.clear_compiled_cache!()
+
+Drop every compiled step an extension is holding.
+
+Declared here and defined only by an extension, so that a caller can ask for it without knowing
+which one is loaded. A compiled step is cached per shape and never invalidated; this is the way
+to reclaim that memory, and to force a recompilation after changing a compiler preference.
+"""
+function clear_compiled_cache! end
+
+"""Refuse a `Compiled()` that nothing answered, rather than handing it to DifferentiationInterface."""
+_require_compiled(::Any) = nothing
+_require_compiled(::Compiled) = throw(ArgumentError(
+    "backend=Compiled() asks for a compiled step and no loaded package provides one; " *
+    "`using Reactant` activates NQSCore's"
+))
+
+@doc (@doc compiled_expect)
+compiled_expect_and_grad(vs, operator, states, backend) = nothing
+
 function expect(vs::FullSumState, operator)
     states = samples(vs)
+    got = compiled_expect(vs, operator, states, vs.backend)
+    got === nothing || return got
+    _require_compiled(vs.backend)
+
     logψ = log_amplitudes(vs, states)
     E = _local_energy(vs, operator, states, logψ)
     return weighted_statistics(E, born_probabilities(logψ))
@@ -339,6 +393,11 @@ end
 
 function expect_and_grad(vs::FullSumState, operator; chunk_size=nothing)
     states = samples(vs)
+    if chunk_size === nothing
+        got = compiled_expect_and_grad(vs, operator, states, vs.backend)
+        got === nothing || return got
+    end
+    _require_compiled(vs.backend)
     a, θ = ansatz(vs), parameters(vs)
 
     x = configurations_of(vs, states)
@@ -434,11 +493,20 @@ function samples(vs::MCState)
 end
 
 function expect(vs::MCState, operator)
-    return statistics(local_energy(vs, operator, samples(vs)))
+    states = samples(vs)
+    got = compiled_expect(vs, operator, states, vs.backend)
+    got === nothing || return got
+    _require_compiled(vs.backend)
+    return statistics(local_energy(vs, operator, states))
 end
 
 function expect_and_grad(vs::MCState, operator; chunk_size=nothing)
     states = samples(vs)
+    if chunk_size === nothing
+        got = compiled_expect_and_grad(vs, operator, states, vs.backend)
+        got === nothing || return got
+    end
+    _require_compiled(vs.backend)
     a, θ = ansatz(vs), parameters(vs)
 
     x = configurations_of(vs, states)

@@ -76,7 +76,7 @@ include("states.jl")
 # interfaces
 export AbstractAnsatz, AbstractVariationalState, AbstractSampler, AbstractPreconditioner
 export log_amplitude, local_energy, parameters, setparameters!, ansatz, samples
-export expect, expect_and_grad, sample, precondition
+export expect, expect_and_grad, sample, precondition, Compiled
 
 # statistics
 export Stats, statistics, weighted_statistics, exact_stats

@@ -103,9 +103,10 @@ end
         # weakdep costs a caller nothing until they load it, so the list may grow. What must
         # not happen is one migrating into `[deps]`, and the exact set above is what stops that
         # — `Pkg.develop` has silently made that move twice in this repository's history.
-        @test Set(keys(get(project, "weakdeps", Dict()))) == Set(["KernelAbstractions"])
+        @test Set(keys(get(project, "weakdeps", Dict()))) ==
+              Set(["KernelAbstractions", "Reactant"])
         @test Set(keys(get(project, "extensions", Dict()))) ==
-              Set(["NQSCoreKernelAbstractionsExt"])
+              Set(["NQSCoreKernelAbstractionsExt", "NQSCoreReactantExt"])
 
         # Every dependency is pinned, which registration requires and which nothing else checks.
         compat = project["compat"]
