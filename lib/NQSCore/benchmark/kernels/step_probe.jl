@@ -201,7 +201,11 @@ its own relative size, whatever precision the arithmetic around it is carried in
 function energy_region_mixed(a, θ, θ32, xs, x_conn32, mels)
     logψ_s = log_amplitude(a, θ, xs)
     logψ_sp = reshape(log_amplitude(a, θ32, x_conn32), size(mels))
-    E = vec(sum(mels .* exp.(ComplexF64.(logψ_sp) .- transpose(logψ_s)); dims=1))
+    # No conversion: `Base.promote_rule` is defined between `TracedRNumber`s, so the single
+    # precision half meets the double one in the subtraction and the exponential, the product
+    # against `mels` and the sum all run double. Reaching for `ComplexF64.(...)` instead broadcasts
+    # a *constructor*, which Reactant has no method for — arithmetic already does the promotion.
+    E = vec(sum(mels .* exp.(logψ_sp .- transpose(logψ_s)); dims=1))
     p = NQSCore.born_probabilities(logψ_s)
     return E, p, NQSCore._gradient_cotangent(E, p)
 end
