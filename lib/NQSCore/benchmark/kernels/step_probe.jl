@@ -479,7 +479,7 @@ let spec = Spin(1 // 2), nsites = NSITES
 
         # Reactant with Enzyme, through the extension: host parameters, a compiler.
         try
-            vs = build(θ, AutoReactant())
+            vs = build(θ, NQSCore.AutoReactant())
             t0 = @elapsed expect_and_grad(vs, H)          # compiles the regions for this shape
             report("    Reactant, compiling (once)", t0)
             t = timed("    Reactant + Enzyme", () -> expect_and_grad(vs, H))
@@ -539,7 +539,7 @@ let spec = Spin(1 // 2), nsites = NSITES
             end
         end
         try
-            vs = build(θ, AutoReactant())
+            vs = build(θ, NQSCore.AutoReactant())
             timed("    $kind, whole SR step, host Zygote", () -> precondition(sr, vs, H))
         catch err
             failed("    $kind SR with a compiler asked for", err, catch_backtrace())

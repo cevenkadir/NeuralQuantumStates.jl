@@ -113,7 +113,10 @@ function NQSCore.precondition(
     # The design matrix and residual both forms of the update are built from. Real and
     # imaginary parts are stacked rather than kept complex, which makes `Re[X†X] = XᵀX`
     # literally true and lets the kernel-trick identity below apply with no special-casing.
-    p = est.weights === nothing ? fill(1 / length(est.E), length(est.E)) :
+    # Uniform weights follow the estimators, for the reason `_gradient_cotangent` does the same:
+    # a host `Vector` meeting a device one fails to compile rather than merely running slowly.
+    p = est.weights === nothing ?
+        fill!(similar(est.E, real(eltype(est.E))), 1 / length(est.E)) :
         est.weights ./ sum(est.weights)
     sqrt_p = sqrt.(p)
     Xc = sqrt_p .* centered(est.O, est.weights)

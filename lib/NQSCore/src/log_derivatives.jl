@@ -220,7 +220,12 @@ Subtracting the mean is not cosmetic: without it the estimator has a non-vanishi
 even at an exact eigenstate, where every local energy is the same number.
 """
 function _gradient_cotangent(E::AbstractVector, weights::Union{Nothing,AbstractVector})
-    p = weights === nothing ? fill(1 / length(E), length(E)) : weights ./ sum(weights)
+    # `similar(E, ...)` and not `fill(...)`: uniform weights are the Monte Carlo case, `E` is
+    # wherever the parameters are, and a host `Vector` broadcast against a device one is not a
+    # slow path but a compilation failure — "passing non-bitstype argument", from the `Extruded`
+    # wrapper the host array arrives in. `MCState` on a device took that route every time.
+    p = weights === nothing ?
+        fill!(similar(E, real(eltype(E))), 1 / length(E)) : weights ./ sum(weights)
     Ē = sum(p .* E)
     return p .* (E .- Ē)
 end

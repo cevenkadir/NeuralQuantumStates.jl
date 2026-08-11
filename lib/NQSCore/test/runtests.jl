@@ -321,6 +321,26 @@ end
         end
     end
 
+    @testset "uniform weights live where the estimators do" begin
+        # `_gradient_cotangent` built them with `fill`, which is a host `Vector` whatever `E` is.
+        # On a device that is not a slow path, it is a compilation failure — "passing
+        # non-bitstype argument", from the `Extruded` wrapper a host array arrives in — and it
+        # is the `weights === nothing` branch, which is every `MCState`. No GPU is needed to see
+        # it: the array type is the whole of the bug.
+        E = ComplexF64[1.0, 2.0, 3.0, 4.0]
+        c = NQSCore._gradient_cotangent(E, nothing)
+        @test c isa Vector{ComplexF64}
+        @test sum(c) ≈ 0 atol = 1e-12          # centred, which is the point of subtracting Ē
+
+        # A weights vector is followed rather than replaced.
+        w = [1.0, 1.0, 2.0, 4.0]
+        @test NQSCore._gradient_cotangent(E, w) ≈ (w ./ sum(w)) .* (E .- sum((w ./ sum(w)) .* E))
+
+        # `similar(E, ...)` is what carries the array type across, and that is the whole of
+        # the fix: on a device `E` is a device array and the weights become one too.
+        @test NQSCore._gradient_cotangent(view(E, :), nothing) isa AbstractVector
+    end
+
     @testset "a compiler is a separate choice from a backend" begin
         # `backend` says which engine differentiates; `compiler` says whether anything compiles.
         # They were one field once, and that made `expect` and stochastic reconfiguration
@@ -333,7 +353,7 @@ end
         θ = init_parameters(a, Xoshiro(0); scale=0.3)
 
         plain = FullSumState(a, θ; backend=BACKEND)
-        asked = FullSumState(a, θ; backend=BACKEND, compiler=AutoReactant())
+        asked = FullSumState(a, θ; backend=BACKEND, compiler=NQSCore.AutoReactant())
         @test plain.compiler === nothing
         @test asked.backend === BACKEND
 
