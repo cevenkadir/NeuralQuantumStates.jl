@@ -104,7 +104,7 @@ end
         # not happen is one migrating into `[deps]`, and the exact set above is what stops that
         # — `Pkg.develop` has silently made that move twice in this repository's history.
         @test Set(keys(get(project, "weakdeps", Dict()))) ==
-              Set(["KernelAbstractions", "Reactant"])
+              Set(["Enzyme", "KernelAbstractions", "Reactant"])
         @test Set(keys(get(project, "extensions", Dict()))) ==
               Set(["NQSCoreKernelAbstractionsExt", "NQSCoreReactantExt"])
 

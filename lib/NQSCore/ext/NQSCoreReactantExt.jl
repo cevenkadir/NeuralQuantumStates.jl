@@ -1,5 +1,5 @@
 """
-A whole variational step compiled by XLA, behind [`NQSCore.Compiled`](@ref).
+A whole variational step compiled by XLA, behind [`NQSCore.AutoReactant`](@ref).
 
 `expect_and_grad` is five operations — unpack the samples, evaluate the network, compute the
 connected configurations, reduce them into local energies, differentiate a scalar — and Zygote
@@ -24,12 +24,15 @@ the sampler, the optimizer and the parameters themselves untouched.
 """
 module NQSCoreReactantExt
 
+# Three triggers, because this needs all three and an extension may only `using` what it declares
+# plus the parent's own dependencies. `SymBasis` is neither: `BaseInt` is never named here, only
+# taken apart through `eltype(states).parameters`, so it does not have to be.
 using ConnectedBasisConfigurations: ConnectedBasisConfigurations, flatten, max_conn_size
 using Enzyme: Enzyme, Const
+using KernelAbstractions: KernelAbstractions
 using NQSCore
 using NQSCore: AutoReactant
 using Reactant
-using SymBasis.DigitBase: BaseInt
 
 # ------------------------------------------------------------------------------ the regions
 
@@ -49,7 +52,7 @@ it, which is a silence worth knowing about.
 """
 function _prepare(op, states, values_conn, values_sample, height::Int, nsites::Int, base::Val)
     n = length(states)
-    backend = Reactant.KernelAbstractions.get_backend(states)
+    backend = KernelAbstractions.get_backend(states)
 
     configs = similar(states, height, n)
     mels = similar(op.vals, height, n)
